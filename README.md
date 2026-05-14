@@ -254,3 +254,14 @@ Funcionalidades trazidas para o novo projeto:
   - Próximas do vencimento
   - Vencidas
 - Impressão das etiquetas.
+
+
+## V27 - Correção estoque inicial e etiquetas
+
+Correção:
+- Ao cadastrar Produto/Item com quantidade/peso padrão maior que zero, o sistema agora cria automaticamente uma entrada de estoque inicial.
+- A quantidade aparece corretamente em Itens cadastrados.
+- O módulo Etiquetas passa a enxergar estoque disponível para impressão.
+- Mantida a conversão:
+  - Kilo → Grama
+  - Litro → Mililitro

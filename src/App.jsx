@@ -149,6 +149,12 @@ function diffDays(date) {
   return Math.ceil((end - start) / 86400000);
 }
 
+function addDaysToToday(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + Number(days || 0));
+  return date.toISOString().split("T")[0];
+}
+
 function currentTimeHHMM() {
   return new Date().toTimeString().slice(0, 5);
 }
@@ -557,16 +563,38 @@ export default function App() {
     if (!stockItemForm.name.trim()) return alert("Informe o nome.");
     if (!stockItemForm.categoryId) return alert("Selecione uma categoria.");
 
-    setStockItems([
-      {
-        id: crypto.randomUUID(),
-        ...stockItemForm,
-        name: stockItemForm.name.trim(),
-        defaultQuantity: normalizeDecimal(stockItemForm.defaultQuantity),
-        defaultValidityDays: Number(stockItemForm.defaultValidityDays || 0)
-      },
-      ...stockItems
-    ]);
+    const newItem = {
+      id: crypto.randomUUID(),
+      ...stockItemForm,
+      name: stockItemForm.name.trim(),
+      defaultQuantity: normalizeDecimal(stockItemForm.defaultQuantity),
+      defaultValidityDays: Number(stockItemForm.defaultValidityDays || 0)
+    };
+
+    setStockItems([newItem, ...stockItems]);
+
+    const initialQuantity = normalizeDecimal(stockItemForm.defaultQuantity);
+
+    if ((stockItemForm.type === "Produto" || stockItemForm.type === "Item") && initialQuantity > 0) {
+      const converted = toBaseUnit(initialQuantity, stockItemForm.unit);
+      const expiryDate = addDaysToToday(Number(stockItemForm.defaultValidityDays || 0));
+
+      setStockLots([
+        {
+          id: crypto.randomUUID(),
+          itemId: newItem.id,
+          quantity: converted.quantity,
+          initialQuantity: converted.quantity,
+          unit: converted.unit,
+          inputQuantity: initialQuantity,
+          inputUnit: stockItemForm.unit,
+          expiryDate,
+          createdAt: new Date().toLocaleString("pt-BR"),
+          origin: "Cadastro inicial"
+        },
+        ...stockLots
+      ]);
+    }
 
     setStockItemForm({
       name: "",
@@ -578,50 +606,6 @@ export default function App() {
     });
   }
 
-  function saveProcessActivity(event) {
-    event.preventDefault();
-
-    if (!processActivityForm.name.trim()) {
-      alert("Informe o nome do processo ou atividade.");
-      return;
-    }
-
-    if (!processActivityForm.area.trim()) {
-      alert("Informe a área referente.");
-      return;
-    }
-
-    setStockItems([
-      {
-        id: crypto.randomUUID(),
-        name: processActivityForm.name.trim(),
-        type: processActivityForm.type,
-        categoryId: "",
-        category: "Processos e atividades",
-        defaultQuantity: 0,
-        unit: "un",
-        defaultValidityDays: 0,
-        area: processActivityForm.area.trim(),
-        startTime: processActivityForm.startTime,
-        endTime: processActivityForm.endTime,
-        repeats: processActivityForm.repeats,
-        repeatQuantity: processActivityForm.repeatQuantity,
-        frequency: processActivityForm.frequency
-      },
-      ...stockItems
-    ]);
-
-    setProcessActivityForm({
-      name: "",
-      type: processActivityForm.type,
-      area: "",
-      startTime: "",
-      endTime: "",
-      repeats: "Não",
-      repeatQuantity: "",
-      frequency: "Diário"
-    });
-  }
 
   function saveStockEntry(event) {
     event.preventDefault();
