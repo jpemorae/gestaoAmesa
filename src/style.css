@@ -2221,3 +2221,240 @@ td {
     height: 96px;
   }
 }
+
+
+/* V32 - Impressão térmica monocromática */
+@media print {
+
+  body {
+    background: #fff !important;
+  }
+
+  .labels-grid.print-area {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6mm;
+    padding: 0;
+    margin: 0;
+  }
+
+  .label-card {
+    width: 58mm;
+    min-height: 38mm;
+    max-height: 42mm;
+    border: 1px solid #000 !important;
+    border-radius: 2mm !important;
+    padding: 3mm !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    display: grid;
+    align-content: start;
+    gap: 1mm;
+  }
+
+  .label-brand-client {
+    margin-bottom: 1mm !important;
+    gap: 2mm !important;
+  }
+
+  .label-brand-client img,
+  .label-logo-fallback {
+    width: 10mm !important;
+    height: 10mm !important;
+    border: 1px solid #000 !important;
+    border-radius: 1mm !important;
+    background: #fff !important;
+  }
+
+  .label-brand-client span {
+    color: #000 !important;
+    font-size: 7pt !important;
+    letter-spacing: 0 !important;
+  }
+
+  .label-card h3 {
+    font-size: 14pt !important;
+    line-height: 1.05 !important;
+    margin: 0 !important;
+    color: #000 !important;
+    font-weight: 900 !important;
+  }
+
+  .label-card strong {
+    font-size: 16pt !important;
+    line-height: 1 !important;
+    color: #000 !important;
+  }
+
+  .label-card span,
+  .label-card small,
+  .label-card b {
+    color: #000 !important;
+    font-size: 8pt !important;
+    line-height: 1.1 !important;
+  }
+
+  .qr-box.real-qr {
+    width: 18mm !important;
+    height: 18mm !important;
+    border: 1px solid #000 !important;
+    border-radius: 1mm !important;
+    padding: 1mm !important;
+    margin: 1mm 0 !important;
+    background: #fff !important;
+  }
+
+  .qr-box.real-qr img {
+    filter: grayscale(100%) contrast(200%);
+    image-rendering: pixelated;
+  }
+
+  .label-actions,
+  .no-print,
+  button {
+    display: none !important;
+  }
+
+  .label-card.warning,
+  .label-card.expired {
+    background: #fff !important;
+    border-color: #000 !important;
+  }
+}
+
+
+/* V33 - Página de ação ao ler QRCode */
+.qr-action-page {
+  display: grid;
+  justify-content: center;
+}
+
+.qr-action-card {
+  width: min(680px, 100%);
+  margin: 0 auto;
+}
+
+.qr-action-card h1 {
+  margin: 0 0 16px;
+  color: var(--blue);
+}
+
+.qr-action-summary {
+  background: #f3ead8;
+  border: 1px solid #eadbbd;
+  border-radius: 16px;
+  padding: 16px;
+  display: grid;
+  gap: 5px;
+  margin-bottom: 16px;
+  color: var(--blue);
+}
+
+.qr-action-summary strong {
+  font-size: 24px;
+}
+
+.qr-action-summary span {
+  font-size: 30px;
+  font-weight: 900;
+}
+
+.qr-action-summary small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.qr-discard-reason {
+  grid-column: 1 / -1;
+}
+
+.qr-action-buttons {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.qr-action-buttons button {
+  min-height: 54px;
+  font-size: 18px;
+}
+
+@media (max-width: 760px) {
+  .qr-action-card {
+    width: 100%;
+  }
+
+  .qr-action-summary span {
+    font-size: 24px;
+  }
+}
+
+
+/* V34 - Evidência fotográfica no checklist */
+.evidence-box {
+  margin-top: 12px;
+  background: #f3ead8;
+  border: 1px solid #eadbbd;
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  color: var(--blue);
+}
+
+.evidence-box strong,
+.evidence-box p {
+  margin: 0;
+}
+
+.evidence-box p {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.evidence-box input[type="file"] {
+  background: #fff;
+  border: 1px solid #d8d1c5;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.evidence-preview {
+  display: grid;
+  gap: 8px;
+  max-width: 260px;
+}
+
+.evidence-preview img {
+  width: 100%;
+  max-height: 190px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid #d8d1c5;
+  background: #fff;
+}
+
+.evidence-preview small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.history-evidence-thumb {
+  width: 68px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #d8d1c5;
+  background: #fff;
+}
+
+@media (max-width: 760px) {
+  .evidence-preview {
+    max-width: 100%;
+  }
+}

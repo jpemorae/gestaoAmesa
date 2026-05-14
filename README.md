@@ -311,3 +311,40 @@ Correção:
 - O QRCode agora carrega o código único da etiqueta.
 - Ao ler o QRCode, o valor retornado é o código da etiqueta, usado para baixa no estoque.
 - Mantido botão "Usar código" como alternativa manual.
+
+
+## V32 - Layout para impressora térmica monocromática
+
+Melhorias:
+- Etiquetas otimizadas para impressoras térmicas monocromáticas.
+- Layout reduzido para etiquetas pequenas.
+- QRCode em alto contraste preto e branco.
+- Removidas cores na impressão.
+- Melhor aproveitamento de papel térmico.
+- Botões ocultados automaticamente na impressão.
+- Fonte ampliada para leitura operacional rápida.
+
+
+## V33 - QRCode abre página de ação
+
+Correção de processo:
+- Ao ler o QRCode, o usuário vai para uma página de ação da etiqueta.
+- Opções disponíveis:
+  - Produção para mesa: baixa estoque e registra consumo/venda.
+  - Descarte: baixa estoque e registra perda/descarte.
+  - Sair: não faz nenhuma ação.
+- O QRCode agora aponta para uma URL com o código da etiqueta.
+- A baixa não acontece apenas por abrir o QRCode.
+
+
+## V34 - Evidência fotográfica no Checklist
+
+Incluído:
+- Upload/tirar foto durante execução do checklist.
+- Exigência de foto antes de finalizar atividade.
+- Preview da imagem anexada.
+- Opção de remover/substituir foto antes de finalizar.
+- Histórico salva imagem de evidência.
+- Histórico permite abrir a imagem em nova aba.
+- Kanban mostra se a atividade em execução possui evidência anexada ou pendente.
+- Dashboard do checklist conta atividades com evidência.

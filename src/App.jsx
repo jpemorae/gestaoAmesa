@@ -303,6 +303,10 @@ export default function App() {
   const [labelConsumeCode, setLabelConsumeCode] = useState("");
   const [labelConsumeArea, setLabelConsumeArea] = useState("");
   const [labelConsumeOperator, setLabelConsumeOperator] = useState("");
+  const [qrActionCode, setQrActionCode] = useState("");
+  const [qrActionArea, setQrActionArea] = useState("");
+  const [qrActionOperator, setQrActionOperator] = useState("");
+  const [qrDiscardReason, setQrDiscardReason] = useState("");
 
   const [stockCadastroType, setStockCadastroType] = useState("produto");
   const [accessCadastroType, setAccessCadastroType] = useState("usuario");
@@ -328,6 +332,7 @@ export default function App() {
   const [checklistPage, setChecklistPage] = useState("executar");
   const [runningChecklist, setRunningChecklist] = useState({});
   const [pendingChecklist, setPendingChecklist] = useState({});
+  const [checklistEvidence, setChecklistEvidence] = useState({});
   const [checklistHistory, setChecklistHistory] = useState([]);
   const [checklistAreaFilter, setChecklistAreaFilter] = useState("Todas");
   const [checklistExecutor, setChecklistExecutor] = useState("");
@@ -748,6 +753,36 @@ export default function App() {
     return checklistAreaFilter === "Todas" || activity.area === checklistAreaFilter;
   });
 
+
+  function handleChecklistEvidence(activityId, event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Envie uma imagem como evidência.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setChecklistEvidence({
+        ...checklistEvidence,
+        [activityId]: {
+          image: reader.result,
+          fileName: file.name,
+          capturedAt: new Date().toLocaleString("pt-BR")
+        }
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function removeChecklistEvidence(activityId) {
+    const next = { ...checklistEvidence };
+    delete next[activityId];
+    setChecklistEvidence(next);
+  }
+
   function startChecklistActivity(activity) {
     if (completedTodayIds.has(activity.id)) return;
     if (runningChecklist[activity.id]) return alert("Esta atividade já foi iniciada.");
@@ -814,6 +849,13 @@ export default function App() {
       return;
     }
 
+    const evidence = checklistEvidence[activity.id];
+
+    if (!evidence?.image) {
+      alert("Anexe ou tire uma foto como evidência antes de finalizar a atividade.");
+      return;
+    }
+
     const realStart = running.startedAt;
     const realEnd = currentTimeHHMM();
     const accumulatedMinutes = Number(running.accumulatedMinutes || 0) + minutesBetween(realStart, realEnd);
@@ -832,16 +874,22 @@ export default function App() {
       executionTime: durationFromMinutes(accumulatedMinutes),
       punctuality: punctualityStatus(activity.startTime, activity.endTime, realStart, realEnd),
       date: today(),
-      completedAt: new Date().toLocaleString("pt-BR")
+      completedAt: new Date().toLocaleString("pt-BR"),
+      evidenceImage: evidence.image,
+      evidenceFileName: evidence.fileName,
+      evidenceCapturedAt: evidence.capturedAt
     };
 
     const nextRunning = { ...runningChecklist };
     const nextPending = { ...pendingChecklist };
+    const nextEvidence = { ...checklistEvidence };
     delete nextRunning[activity.id];
     delete nextPending[activity.id];
+    delete nextEvidence[activity.id];
 
     setRunningChecklist(nextRunning);
     setPendingChecklist(nextPending);
+    setChecklistEvidence(nextEvidence);
     setChecklistHistory([record, ...checklistHistory]);
   }
 
@@ -853,10 +901,13 @@ export default function App() {
 
     const nextRunning = { ...runningChecklist };
     const nextPending = { ...pendingChecklist };
+    const nextEvidence = { ...checklistEvidence };
     delete nextRunning[activityId];
     delete nextPending[activityId];
+    delete nextEvidence[activityId];
     setRunningChecklist(nextRunning);
     setPendingChecklist(nextPending);
+    setChecklistEvidence(nextEvidence);
   }
 
   function renderChecklistCadastro() {
@@ -1342,6 +1393,7 @@ export default function App() {
           <MiniDashCard title="Em andamento" value={andamento} detail="Iniciadas e não finalizadas" warning={andamento > 0} />
           <MiniDashCard title="Pendentes hoje" value={pendentes} detail="Ainda não concluídas" danger={pendentes > 0} />
           <MiniDashCard title="Histórico total" value={historicoTotal} detail="Execuções registradas" />
+          <MiniDashCard title="Com evidência" value={checklistHistory.filter((record) => record.evidenceImage).length} detail="Atividades com foto anexada" />
           <MiniDashCard title="Usuários cadastrados" value={stockUsers.length} detail="Operação, setor, cargo e Telegram" />
           <MiniDashCard title="Telegram ativo" value={stockUsers.filter((user) => user.telegramEnabled).length} detail="Usuários aptos a receber alerta" />
         </div>
@@ -1489,6 +1541,28 @@ export default function App() {
                         <small>Parado em: {pending.stoppedAtFull}</small>
                       </div>
                     )}
+
+                    {running && (
+                      <div className="evidence-box">
+                        <strong>Evidência da execução</strong>
+                        <p>Envie ou tire uma foto antes de finalizar esta atividade.</p>
+
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={(event) => handleChecklistEvidence(activity.id, event)}
+                        />
+
+                        {checklistEvidence[activity.id]?.image && (
+                          <div className="evidence-preview">
+                            <img src={checklistEvidence[activity.id].image} alt="Evidência da atividade" />
+                            <small>{checklistEvidence[activity.id].capturedAt}</small>
+                            <button className="danger" type="button" onClick={() => removeChecklistEvidence(activity.id)}>Remover foto</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="checklist-actions">
@@ -1537,6 +1611,7 @@ export default function App() {
                   <th>Realizado</th>
                   <th>Tempo</th>
                   <th>Pontualidade</th>
+                  <th>Evidência</th>
                   <th>Concluído em</th>
                 </tr>
               </thead>
@@ -1551,6 +1626,15 @@ export default function App() {
                     <td>{record.realStart || "--"} às {record.realEnd || "--"}</td>
                     <td>{record.executionTime}</td>
                     <td>{record.punctuality}</td>
+                    <td>
+                      {record.evidenceImage ? (
+                        <a href={record.evidenceImage} target="_blank" rel="noreferrer">
+                          <img className="history-evidence-thumb" src={record.evidenceImage} alt="Evidência" />
+                        </a>
+                      ) : (
+                        "--"
+                      )}
+                    </td>
                     <td>{record.completedAt}</td>
                   </tr>
                 ))}
@@ -1989,6 +2073,7 @@ export default function App() {
                         <small>{activity.area || "Sem área"}</small>
                         <small>{activity.startTime || "--"} às {activity.endTime || "--"}</small>
                         <small>{activity.frequency || "--"}</small>
+                        {runningChecklist[activity.id] && <small>{checklistEvidence[activity.id]?.image ? "📷 Evidência anexada" : "📷 Evidência pendente"}</small>}
                         {pendingChecklist[activity.id] && <small><strong>Motivo:</strong> {pendingChecklist[activity.id].reason}</small>}
                       </article>
                     ))
@@ -2026,6 +2111,17 @@ export default function App() {
 
     setStockLots(updatedLots);
     return true;
+  }
+
+  function getQrActionUrl(code) {
+    const baseUrl = window.location.origin + window.location.pathname;
+    return `${baseUrl}?etiqueta=${encodeURIComponent(code)}`;
+  }
+
+  function openQrActionPage(code) {
+    setQrActionCode(code);
+    setLabelConsumeCode(code);
+    setPage("qr-action");
   }
 
   function getLabelItem() {
@@ -2102,6 +2198,55 @@ export default function App() {
     setLabelsHistory(labelsHistory.filter((label) => label.id !== labelId));
   }
 
+  function processQrAction(action) {
+    const code = qrActionCode.trim() || labelConsumeCode.trim();
+
+    if (!code) return alert("Etiqueta não informada.");
+
+    const label = labelsHistory.find((item) => item.code === code);
+    if (!label) return alert("Etiqueta não encontrada.");
+    if (label.status === "Consumido") return alert("Esta etiqueta já foi consumida.");
+    if (label.status === "Descartado") return alert("Esta etiqueta já foi descartada.");
+
+    if (action === "sair") {
+      setPage("etiquetas");
+      setQrActionCode("");
+      setQrDiscardReason("");
+      return;
+    }
+
+    if (action === "descarte" && !qrDiscardReason.trim()) {
+      return alert("Informe o motivo do descarte.");
+    }
+
+    const lowered = decrementStockByLabel(label);
+    if (!lowered) return;
+
+    const nextStatus = action === "descarte" ? "Descartado" : "Consumido";
+
+    setLabelsHistory(labelsHistory.map((item) =>
+      item.id === label.id
+        ? {
+            ...item,
+            status: nextStatus,
+            consumedAt: new Date().toLocaleString("pt-BR"),
+            consumedBy: qrActionOperator || loggedUser?.name || "Não informado",
+            consumedArea: qrActionArea || loggedUser?.sector || "Não informada",
+            consumptionType: action === "descarte" ? "Descarte" : "Produção para mesa",
+            discardReason: action === "descarte" ? qrDiscardReason.trim() : item.discardReason
+          }
+        : item
+    ));
+
+    setQrActionCode("");
+    setQrActionArea("");
+    setQrActionOperator("");
+    setQrDiscardReason("");
+    setLabelConsumeCode("");
+    alert(action === "descarte" ? "Descarte registrado e estoque baixado." : "Produção para mesa registrada e estoque baixado.");
+    setPage("etiquetas");
+  }
+
   function consumeLabelByQr(event) {
     event.preventDefault();
 
@@ -2110,27 +2255,10 @@ export default function App() {
 
     const label = labelsHistory.find((item) => item.code === code);
     if (!label) return alert("Etiqueta não encontrada.");
-    if (label.status === "Consumido") return alert("Esta etiqueta já foi consumida.");
-    if (label.status === "Descartado") return alert("Esta etiqueta está descartada e não pode ser consumida.");
 
-    const lowered = decrementStockByLabel(label);
-    if (!lowered) return;
-
-    setLabelsHistory(labelsHistory.map((item) =>
-      item.id === label.id
-        ? {
-            ...item,
-            status: "Consumido",
-            consumedAt: new Date().toLocaleString("pt-BR"),
-            consumedBy: labelConsumeOperator || loggedUser?.name || "Não informado",
-            consumedArea: labelConsumeArea || loggedUser?.sector || "Não informada"
-          }
-        : item
-    ));
-
-    setLabelConsumeCode("");
-    alert("Baixa realizada com sucesso.");
+    openQrActionPage(code);
   }
+
 
   function discardLabel(labelId) {
     const label = labelsHistory.find((item) => item.id === labelId);
@@ -2284,8 +2412,8 @@ export default function App() {
           </section>
 
           <section className="module-content stock-wide">
-            <h2>Leitura de QRCode / Baixa para produção</h2>
-            <p className="stock-help">A baixa no estoque acontece somente aqui, quando a cozinha usa o produto para produzir. Leia o QRCode ou digite o código da etiqueta.</p>
+            <h2>Leitura de QRCode / Ação da etiqueta</h2>
+            <p className="stock-help">Ao abrir o QRCode, escolha Produção para mesa, Descarte ou Sair. A baixa no estoque acontece apenas em Produção para mesa ou Descarte.</p>
 
             <form className="stock-form-grid" onSubmit={consumeLabelByQr}>
               <label>
@@ -2311,7 +2439,7 @@ export default function App() {
                 </select>
               </label>
 
-              <button className="primary" type="submit">Ler QRCode e baixar estoque</button>
+              <button className="primary" type="submit">Abrir ação da etiqueta</button>
             </form>
           </section>
 
@@ -2321,7 +2449,7 @@ export default function App() {
                 <h2>Etiquetas geradas</h2>
                 <p className="stock-help">Histórico das etiquetas emitidas. Imprimir não baixa estoque; baixa somente via leitura do QRCode.</p>
               </div>
-              <button className="secondary" onClick={printLabels}>Imprimir etiquetas</button>
+              <button className="secondary" onClick={printLabels}>Imprimir térmica</button>
             </div>
 
             {labelsHistory.length === 0 ? (
@@ -2351,7 +2479,7 @@ export default function App() {
 
                       <div className="qr-box real-qr" title={label.code}>
                         <img
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(label.code)}`}
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(getQrActionUrl(label.code))}`}
                           alt={`QRCode ${label.code}`}
                         />
                       </div>
@@ -2361,7 +2489,7 @@ export default function App() {
                       {label.status === "Descartado" && <small>Descartado: {label.discardReason}</small>}
 
                       <div className="label-actions no-print">
-                        {label.status === "Disponível" && <button className="secondary" onClick={() => setLabelConsumeCode(label.code)}>Usar código</button>}
+                        {label.status === "Disponível" && <button className="secondary" onClick={() => openQrActionPage(label.code)}>Abrir QR</button>}
                         {label.status === "Disponível" && <button className="danger" onClick={() => discardLabel(label.id)}>Descartar</button>}
                         <button className="danger" onClick={() => deleteLabel(label.id)}>Excluir</button>
                       </div>
@@ -2454,6 +2582,75 @@ export default function App() {
   }
 
 
+
+  function renderQrActionPage() {
+    const label = labelsHistory.find((item) => item.code === qrActionCode);
+
+    return (
+      <main className="module-full qr-action-page">
+        <header className="module-header">
+          <button className="module-back" onClick={() => setPage("etiquetas")}>← Voltar para Etiquetas</button>
+        </header>
+
+        <section className="module-content qr-action-card">
+          <h1>Leitura da etiqueta</h1>
+
+          {!label ? (
+            <div className="module-placeholder">
+              <strong>Etiqueta não encontrada</strong>
+              <p>Verifique o QRCode ou digite novamente o código.</p>
+            </div>
+          ) : (
+            <>
+              <div className="qr-action-summary">
+                <strong>{label.itemName}</strong>
+                <span>{formatStockDisplay(label.quantity, label.unit)}</span>
+                <small>Código: {label.code}</small>
+                <small>Status: {label.status || "Disponível"}</small>
+                <small>Validade: {formatDate(label.expiryDate)}</small>
+              </div>
+
+              <div className="stock-form-grid">
+                <label>
+                  Área
+                  <select value={qrActionArea} onChange={(event) => setQrActionArea(event.target.value)}>
+                    <option value="">Selecione</option>
+                    {areas.map((area) => <option key={area}>{area}</option>)}
+                  </select>
+                </label>
+
+                <label>
+                  Responsável
+                  <select value={qrActionOperator} onChange={(event) => setQrActionOperator(event.target.value)}>
+                    <option value="">Selecionar responsável</option>
+                    {stockUsers.filter((user) => user.status === "Ativo").map((user) => (
+                      <option key={user.id} value={user.name}>{user.name} - {user.sector}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="qr-discard-reason">
+                  Motivo do descarte
+                  <input
+                    value={qrDiscardReason}
+                    onChange={(event) => setQrDiscardReason(event.target.value)}
+                    placeholder="Obrigatório apenas para descarte"
+                  />
+                </label>
+              </div>
+
+              <div className="qr-action-buttons">
+                <button className="primary" onClick={() => processQrAction("producao")}>Produção para mesa</button>
+                <button className="danger" onClick={() => processQrAction("descarte")}>Descarte</button>
+                <button className="secondary" onClick={() => processQrAction("sair")}>Sair</button>
+              </div>
+            </>
+          )}
+        </section>
+      </main>
+    );
+  }
+
   if (!isLogged) {
     return (
       <main className="login-page">
@@ -2499,6 +2696,10 @@ export default function App() {
         </section>
       </main>
     );
+  }
+
+  if (page === "qr-action") {
+    return renderQrActionPage();
   }
 
   if (["estoque", "etiquetas", "checklist", "acesso"].includes(page)) {
