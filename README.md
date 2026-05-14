@@ -302,3 +302,12 @@ Mudança de processo:
 - A baixa no estoque acontece somente na leitura do QRCode, quando o produto é usado na produção.
 - Novo status da etiqueta: Disponível, Consumido ou Descartado.
 - Leitura de QRCode registra área, responsável e data/hora.
+
+
+## V31 - QRCode real nas etiquetas
+
+Correção:
+- Substituído o QR visual/simulado por QRCode real.
+- O QRCode agora carrega o código único da etiqueta.
+- Ao ler o QRCode, o valor retornado é o código da etiqueta, usado para baixa no estoque.
+- Mantido botão "Usar código" como alternativa manual.

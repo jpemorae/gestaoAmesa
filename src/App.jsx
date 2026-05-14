@@ -2285,7 +2285,7 @@ export default function App() {
 
           <section className="module-content stock-wide">
             <h2>Leitura de QRCode / Baixa para produção</h2>
-            <p className="stock-help">A baixa no estoque acontece somente aqui, quando a cozinha usa o produto para produzir.</p>
+            <p className="stock-help">A baixa no estoque acontece somente aqui, quando a cozinha usa o produto para produzir. Leia o QRCode ou digite o código da etiqueta.</p>
 
             <form className="stock-form-grid" onSubmit={consumeLabelByQr}>
               <label>
@@ -2349,10 +2349,11 @@ export default function App() {
                       <span>Emissão: {formatDate(label.issuedAt)}</span>
                       <span>Validade: {formatDate(label.expiryDate)}</span>
 
-                      <div className="qr-box" title={label.code}>
-                        {qrPatternFromCode(label.code).map((active, index) => (
-                          <i key={index} className={active ? "active" : ""}></i>
-                        ))}
+                      <div className="qr-box real-qr" title={label.code}>
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(label.code)}`}
+                          alt={`QRCode ${label.code}`}
+                        />
                       </div>
 
                       <small>{label.code}</small>

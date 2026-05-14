@@ -1,6 +1,6 @@
 {
-  "name": "gestao-a-mesa-zero-v30-rastreabilidade-qr",
-  "version": "30.0.0",
+  "name": "gestao-a-mesa-zero-v31-qrcode-real",
+  "version": "31.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
