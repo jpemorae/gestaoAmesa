@@ -1875,6 +1875,52 @@ export default function App() {
     );
   }
 
+
+  function saveProcessActivity(event) {
+    event.preventDefault();
+
+    if (!processActivityForm.name.trim()) {
+      alert("Informe o nome do processo ou atividade.");
+      return;
+    }
+
+    if (!processActivityForm.area.trim()) {
+      alert("Informe a área referente.");
+      return;
+    }
+
+    setStockItems([
+      {
+        id: crypto.randomUUID(),
+        name: processActivityForm.name.trim(),
+        type: processActivityForm.type,
+        categoryId: "",
+        category: "Processos e atividades",
+        defaultQuantity: 0,
+        unit: "un",
+        defaultValidityDays: 0,
+        area: processActivityForm.area.trim(),
+        startTime: processActivityForm.startTime,
+        endTime: processActivityForm.endTime,
+        repeats: processActivityForm.repeats,
+        repeatQuantity: processActivityForm.repeatQuantity,
+        frequency: processActivityForm.frequency
+      },
+      ...stockItems
+    ]);
+
+    setProcessActivityForm({
+      name: "",
+      type: processActivityForm.type,
+      area: "",
+      startTime: "",
+      endTime: "",
+      repeats: "Não",
+      repeatQuantity: "",
+      frequency: "Diário"
+    });
+  }
+
   function renderAccessProcessForm() {
     return (
       <>

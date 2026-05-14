@@ -348,3 +348,11 @@ Incluído:
 - Histórico permite abrir a imagem em nova aba.
 - Kanban mostra se a atividade em execução possui evidência anexada ou pendente.
 - Dashboard do checklist conta atividades com evidência.
+
+
+## V35 - Correção processo/atividade
+
+Correção:
+- Corrigido erro `saveProcessActivity is not defined`.
+- O cadastro de Processo / Atividade voltou a salvar corretamente.
+- A página não quebra mais ao abrir/criar processo ou atividade.

@@ -1,6 +1,6 @@
 {
-  "name": "gestao-a-mesa-zero-v34-checklist-evidencia-foto",
-  "version": "34.0.0",
+  "name": "gestao-a-mesa-zero-v35-correcao-processo-atividade",
+  "version": "35.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
