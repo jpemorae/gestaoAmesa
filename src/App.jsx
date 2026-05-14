@@ -160,14 +160,22 @@ function timeToMinutes(time) {
 }
 
 function durationText(start, end) {
+  return durationFromMinutes(minutesBetween(start, end));
+}
+
+function minutesBetween(start, end) {
   const startMin = timeToMinutes(start);
   const endMin = timeToMinutes(end);
 
-  if (startMin === null || endMin === null) return "--";
+  if (startMin === null || endMin === null) return 0;
 
-  const total = endMin >= startMin ? endMin - startMin : (24 * 60 - startMin) + endMin;
-  const hours = Math.floor(total / 60);
-  const minutes = total % 60;
+  return endMin >= startMin ? endMin - startMin : (24 * 60 - startMin) + endMin;
+}
+
+function durationFromMinutes(total) {
+  const safeTotal = Math.max(0, Number(total || 0));
+  const hours = Math.floor(safeTotal / 60);
+  const minutes = safeTotal % 60;
 
   if (hours === 0) return `${minutes} min`;
   if (minutes === 0) return `${hours}h`;
@@ -299,6 +307,7 @@ export default function App() {
 
   const [checklistPage, setChecklistPage] = useState("executar");
   const [runningChecklist, setRunningChecklist] = useState({});
+  const [pendingChecklist, setPendingChecklist] = useState({});
   const [checklistHistory, setChecklistHistory] = useState([]);
   const [checklistAreaFilter, setChecklistAreaFilter] = useState("Todas");
   const [checklistExecutor, setChecklistExecutor] = useState("");
@@ -715,13 +724,56 @@ export default function App() {
     if (completedTodayIds.has(activity.id)) return;
     if (runningChecklist[activity.id]) return alert("Esta atividade já foi iniciada.");
 
+    const pending = pendingChecklist[activity.id];
+    const nextPending = { ...pendingChecklist };
+    delete nextPending[activity.id];
+
+    setPendingChecklist(nextPending);
+
     setRunningChecklist({
       ...runningChecklist,
       [activity.id]: {
         activityId: activity.id,
         startedAt: currentTimeHHMM(),
         startedAtFull: new Date().toLocaleString("pt-BR"),
-        executor: checklistExecutor || "Não informado"
+        executor: checklistExecutor || pending?.executor || "Não informado",
+        accumulatedMinutes: pending?.accumulatedMinutes || 0
+      }
+    });
+  }
+
+  function markChecklistPending(activity) {
+    const running = runningChecklist[activity.id];
+
+    if (!running) {
+      alert("Clique em iniciar antes de registrar uma pendência.");
+      return;
+    }
+
+    const reason = window.prompt("O que está impedindo de seguir com esta atividade?");
+
+    if (!reason || !reason.trim()) {
+      alert("Informe o motivo da pendência.");
+      return;
+    }
+
+    const stoppedAt = currentTimeHHMM();
+    const accumulatedMinutes = Number(running.accumulatedMinutes || 0) + minutesBetween(running.startedAt, stoppedAt);
+
+    const nextRunning = { ...runningChecklist };
+    delete nextRunning[activity.id];
+
+    setRunningChecklist(nextRunning);
+    setPendingChecklist({
+      ...pendingChecklist,
+      [activity.id]: {
+        activityId: activity.id,
+        reason: reason.trim(),
+        stoppedAt,
+        stoppedAtFull: new Date().toLocaleString("pt-BR"),
+        realStart: running.startedAt,
+        executor: running.executor || checklistExecutor || "Não informado",
+        accumulatedMinutes
       }
     });
   }
@@ -736,6 +788,7 @@ export default function App() {
 
     const realStart = running.startedAt;
     const realEnd = currentTimeHHMM();
+    const accumulatedMinutes = Number(running.accumulatedMinutes || 0) + minutesBetween(realStart, realEnd);
 
     const record = {
       id: crypto.randomUUID(),
@@ -748,16 +801,19 @@ export default function App() {
       plannedEnd: activity.endTime || "",
       realStart,
       realEnd,
-      executionTime: durationText(realStart, realEnd),
+      executionTime: durationFromMinutes(accumulatedMinutes),
       punctuality: punctualityStatus(activity.startTime, activity.endTime, realStart, realEnd),
       date: today(),
       completedAt: new Date().toLocaleString("pt-BR")
     };
 
     const nextRunning = { ...runningChecklist };
+    const nextPending = { ...pendingChecklist };
     delete nextRunning[activity.id];
+    delete nextPending[activity.id];
 
     setRunningChecklist(nextRunning);
+    setPendingChecklist(nextPending);
     setChecklistHistory([record, ...checklistHistory]);
   }
 
@@ -768,8 +824,11 @@ export default function App() {
     setChecklistHistory(checklistHistory.filter((record) => record.activityId !== activityId));
 
     const nextRunning = { ...runningChecklist };
+    const nextPending = { ...pendingChecklist };
     delete nextRunning[activityId];
+    delete nextPending[activityId];
     setRunningChecklist(nextRunning);
+    setPendingChecklist(nextPending);
   }
 
   function renderChecklistCadastro() {
@@ -1364,10 +1423,11 @@ export default function App() {
           <div className="checklist-card-list">
             {filteredChecklistActivities.map((activity) => {
               const running = runningChecklist[activity.id];
+              const pending = pendingChecklist[activity.id];
               const done = completedTodayIds.has(activity.id);
 
               return (
-                <article className={done ? "checklist-card done" : running ? "checklist-card running" : "checklist-card"} key={activity.id}>
+                <article className={done ? "checklist-card done" : pending ? "checklist-card pending" : running ? "checklist-card running" : "checklist-card"} key={activity.id}>
                   <div className="checklist-card-info">
                     <strong>{activity.name}</strong>
                     <small>{activity.type} • Área: {activity.area || "--"} • Previsto: {activity.startTime || "--"} às {activity.endTime || "--"}</small>
@@ -1375,24 +1435,37 @@ export default function App() {
                     <div className="checklist-time-grid">
                       <div>
                         <span>Início real</span>
-                        <b>{running?.startedAt || "--"}</b>
+                        <b>{running?.startedAt || pending?.realStart || "--"}</b>
                       </div>
                       <div>
                         <span>Status</span>
-                        <b>{running ? punctualityStatus(activity.startTime, activity.endTime, running.startedAt, currentTimeHHMM()) : done ? "Concluído hoje" : "Aguardando"}</b>
+                        <b>{pending ? "Pendência" : running ? punctualityStatus(activity.startTime, activity.endTime, running.startedAt, currentTimeHHMM()) : done ? "Concluído hoje" : "Aguardando"}</b>
                       </div>
                       <div>
                         <span>Tempo</span>
-                        <b>{running ? durationText(running.startedAt, currentTimeHHMM()) : "--"}</b>
+                        <b>{running ? durationFromMinutes(Number(running.accumulatedMinutes || 0) + minutesBetween(running.startedAt, currentTimeHHMM())) : pending ? durationFromMinutes(pending.accumulatedMinutes) : "--"}</b>
                       </div>
                     </div>
+
+                    {pending && (
+                      <div className="pending-reason-box">
+                        <strong>Motivo da pendência:</strong>
+                        <span>{pending.reason}</span>
+                        <small>Parado em: {pending.stoppedAtFull}</small>
+                      </div>
+                    )}
                   </div>
 
                   <div className="checklist-actions">
                     {done ? (
                       <button className="done-button" disabled>Concluído</button>
+                    ) : pending ? (
+                      <button className="primary" onClick={() => startChecklistActivity(activity)}>Retomar</button>
                     ) : running ? (
-                      <button className="finish-button" onClick={() => finishChecklistActivity(activity)}>Finalizar</button>
+                      <>
+                        <button className="pending-button" onClick={() => markChecklistPending(activity)}>Pendência</button>
+                        <button className="finish-button" onClick={() => finishChecklistActivity(activity)}>Finalizar</button>
+                      </>
                     ) : (
                       <button className="primary" onClick={() => startChecklistActivity(activity)}>Iniciar</button>
                     )}
@@ -1758,6 +1831,10 @@ export default function App() {
       return "Concluído";
     }
 
+    if (pendingChecklist[activity.id]) {
+      return "Pendência";
+    }
+
     if (runningChecklist[activity.id]) {
       return "Executando";
     }
@@ -1816,6 +1893,7 @@ export default function App() {
                         <small>{activity.area || "Sem área"}</small>
                         <small>{activity.startTime || "--"} às {activity.endTime || "--"}</small>
                         <small>{activity.frequency || "--"}</small>
+                        {pendingChecklist[activity.id] && <small><strong>Motivo:</strong> {pendingChecklist[activity.id].reason}</small>}
                       </article>
                     ))
                   )}

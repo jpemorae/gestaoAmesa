@@ -205,3 +205,17 @@ Incluído:
 - Filtro por área/departamento no Kanban.
 - Gestão de acesso > Cadastro de Área / Departamento.
 - Áreas reutilizadas no cadastro de usuário e processo/atividade.
+
+
+## V24 - Pendência no Checklist
+
+Incluído:
+- Botão Pendência durante a execução do checklist.
+- Ao clicar em Pendência:
+  - o cronômetro para;
+  - abre uma caixa para informar o motivo do impedimento;
+  - a atividade entra em status de Pendência;
+  - o Kanban passa a mostrar a atividade na coluna Pendência;
+  - é possível Retomar a atividade depois.
+- Ao retomar, o tempo já executado é preservado.
+- Ao finalizar, o sistema soma o tempo executado antes e depois da pendência.
