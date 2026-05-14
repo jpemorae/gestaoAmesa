@@ -1970,3 +1970,86 @@ td {
   display: grid;
   gap: 8px;
 }
+
+
+/* V26 - Etiquetas funcional */
+.labels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.label-card {
+  background: #fff;
+  border: 2px solid var(--blue);
+  border-radius: 14px;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  color: var(--blue);
+  min-height: 190px;
+}
+
+.label-card.warning {
+  border-color: var(--gold);
+  background: #fff8e8;
+}
+
+.label-card.expired {
+  border-color: #a32d16;
+  background: #ffe7e0;
+}
+
+.label-brand {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  font-weight: 900;
+  color: var(--gold);
+}
+
+.label-card h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.label-card strong {
+  font-size: 24px;
+}
+
+.label-card span,
+.label-card small {
+  display: block;
+  font-size: 12px;
+}
+
+.label-card small {
+  color: var(--muted);
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .label-card {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+}

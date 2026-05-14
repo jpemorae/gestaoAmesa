@@ -1,6 +1,6 @@
 {
-  "name": "gestao-a-mesa-zero-v24-checklist-pendencia",
-  "version": "24.0.0",
+  "name": "gestao-a-mesa-zero-v26-etiquetas-funcional",
+  "version": "26.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

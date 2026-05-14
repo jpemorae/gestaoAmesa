@@ -285,6 +285,16 @@ export default function App() {
     expiryDate: ""
   });
 
+  const [labelForm, setLabelForm] = useState({
+    itemId: "",
+    quantity: "",
+    quantityUnit: "g",
+    labelCount: 1,
+    issuedAt: today(),
+    expiryDate: ""
+  });
+  const [labelsHistory, setLabelsHistory] = useState([]);
+
   const [stockCadastroType, setStockCadastroType] = useState("produto");
   const [accessCadastroType, setAccessCadastroType] = useState("usuario");
   const [areaForm, setAreaForm] = useState("");
@@ -1839,13 +1849,6 @@ export default function App() {
       return "Executando";
     }
 
-    const plannedEnd = timeToMinutes(activity.endTime);
-    const now = timeToMinutes(currentTimeHHMM());
-
-    if (plannedEnd !== null && now !== null && now > plannedEnd) {
-      return "Pendência";
-    }
-
     return "Não iniciado";
   }
 
@@ -1860,7 +1863,7 @@ export default function App() {
         <div className="kanban-header">
           <div>
             <h2>Kanban operacional</h2>
-            <p className="stock-help">Acompanhe as atividades por status e filtre por área/departamento.</p>
+            <p className="stock-help">Acompanhe as atividades por status. Nova atividade entra como Não iniciado; ao iniciar vai para Executando; ao registrar pendência vai para Pendência.</p>
           </div>
 
           <label>
@@ -1902,6 +1905,277 @@ export default function App() {
             );
           })}
         </div>
+      </section>
+    );
+  }
+
+
+  function getLabelItem() {
+    return stockItemsView.find((item) => item.id === labelForm.itemId);
+  }
+
+  function getLabelsDash() {
+    const todayLabels = labelsHistory.filter((label) => label.issuedAt === today()).length;
+    const expired = labelsHistory.filter((label) => diffDays(label.expiryDate) < 0).length;
+    const expiring = labelsHistory.filter((label) => {
+      const days = diffDays(label.expiryDate);
+      return days >= 0 && days <= stockAlertDays;
+    }).length;
+
+    return {
+      total: labelsHistory.length,
+      todayLabels,
+      expired,
+      expiring
+    };
+  }
+
+  function saveLabels(event) {
+    event.preventDefault();
+
+    if (!labelForm.itemId) {
+      alert("Selecione um produto/item.");
+      return;
+    }
+
+    if (!labelForm.quantity || normalizeDecimal(labelForm.quantity) <= 0) {
+      alert("Informe a quantidade por etiqueta.");
+      return;
+    }
+
+    if (!labelForm.labelCount || Number(labelForm.labelCount) <= 0) {
+      alert("Informe a quantidade de etiquetas.");
+      return;
+    }
+
+    if (!labelForm.expiryDate) {
+      alert("Informe a validade.");
+      return;
+    }
+
+    const item = getLabelItem();
+    const converted = toBaseUnit(labelForm.quantity, labelForm.quantityUnit);
+    const totalToRemove = converted.quantity * Number(labelForm.labelCount);
+
+    if (!item || converted.unit !== item.stockUnit) {
+      alert("Unidade incompatível com o item selecionado.");
+      return;
+    }
+
+    const totalAvailable = stockLots
+      .filter((lot) => lot.itemId === item.id)
+      .reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
+
+    if (totalAvailable < totalToRemove) {
+      alert(`Estoque insuficiente. Disponível: ${formatStockDisplay(totalAvailable, item.stockUnit)}.`);
+      return;
+    }
+
+    let remaining = totalToRemove;
+    const updatedLots = stockLots.map((lot) => {
+      if (lot.itemId !== item.id || remaining <= 0) return lot;
+
+      const used = Math.min(Number(lot.quantity || 0), remaining);
+      remaining -= used;
+
+      return {
+        ...lot,
+        quantity: Number(lot.quantity || 0) - used
+      };
+    });
+
+    const createdLabels = Array.from({ length: Number(labelForm.labelCount) }, (_, index) => ({
+      id: crypto.randomUUID(),
+      code: `ETQ-${Date.now()}-${index + 1}`,
+      itemId: item.id,
+      itemName: item.name,
+      category: item.category,
+      quantity: converted.quantity,
+      unit: converted.unit,
+      displayQuantity: normalizeDecimal(labelForm.quantity),
+      displayUnit: labelForm.quantityUnit,
+      issuedAt: labelForm.issuedAt || today(),
+      expiryDate: labelForm.expiryDate,
+      createdAt: new Date().toLocaleString("pt-BR")
+    }));
+
+    setStockLots(updatedLots);
+    setLabelsHistory([...createdLabels, ...labelsHistory]);
+    setLabelForm({
+      itemId: "",
+      quantity: "",
+      quantityUnit: "g",
+      labelCount: 1,
+      issuedAt: today(),
+      expiryDate: ""
+    });
+  }
+
+  function deleteLabel(labelId) {
+    if (!confirm("Deseja excluir esta etiqueta do histórico?")) return;
+    setLabelsHistory(labelsHistory.filter((label) => label.id !== labelId));
+  }
+
+  function printLabels() {
+    window.print();
+  }
+
+  function renderEtiquetasModule() {
+    const dash = getLabelsDash();
+    const selectedItem = getLabelItem();
+    const compatibleUnits = compatibleUnitsFor(selectedItem?.unit || "g");
+
+    return (
+      <section className="stock-workspace labels-workspace">
+        <aside className="stock-sidebar">
+          <button className="stock-nav active">Gerar etiquetas</button>
+        </aside>
+
+        <main className="stock-main">
+          <section className="module-content stock-wide">
+            <h2>Etiquetas</h2>
+            <p className="stock-help">Gere etiquetas com validade, quantidade e baixa automática do estoque.</p>
+
+            <div className="acomp-grid labels-dash">
+              <div className="acomp-card">
+                <span>Etiquetas emitidas</span>
+                <strong>{dash.total}</strong>
+                <small>Histórico total</small>
+              </div>
+              <div className="acomp-card">
+                <span>Emitidas hoje</span>
+                <strong>{dash.todayLabels}</strong>
+                <small>Data atual</small>
+              </div>
+              <div className="acomp-card warning">
+                <span>Próx. vencimento</span>
+                <strong>{dash.expiring}</strong>
+                <small>Até {stockAlertDays} dia(s)</small>
+              </div>
+              <div className="acomp-card danger-card">
+                <span>Vencidas</span>
+                <strong>{dash.expired}</strong>
+                <small>Etiquetas vencidas</small>
+              </div>
+            </div>
+          </section>
+
+          <section className="module-content stock-wide">
+            <h2>Gerar etiqueta</h2>
+
+            <form className="stock-form-grid" onSubmit={saveLabels}>
+              <label>
+                Produto / Item
+                <select
+                  value={labelForm.itemId}
+                  onChange={(event) => {
+                    const selected = stockItemsView.find((item) => item.id === event.target.value);
+                    const firstUnit = compatibleUnitsFor(selected?.unit || "g")[0];
+                    setLabelForm({ ...labelForm, itemId: event.target.value, quantityUnit: firstUnit });
+                  }}
+                >
+                  <option value="">Selecione</option>
+                  {stockItemsView
+                    .filter((item) => item.type === "Produto" || item.type === "Item")
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>{item.name} - Estoque: {formatStockDisplay(item.totalStock, item.stockUnit)}</option>
+                    ))}
+                </select>
+              </label>
+
+              <label>
+                Quantidade por etiqueta
+                <input
+                  type="number"
+                  step="0.001"
+                  value={labelForm.quantity}
+                  onChange={(event) => setLabelForm({ ...labelForm, quantity: event.target.value })}
+                  placeholder="Ex: 250"
+                />
+              </label>
+
+              <div className="unit-picker-stock">
+                <span>Unidade</span>
+                <div className="unit-buttons-stock">
+                  {compatibleUnits.map((unit) => (
+                    <button
+                      type="button"
+                      key={unit}
+                      className={labelForm.quantityUnit === unit ? "unit-btn-stock active" : "unit-btn-stock"}
+                      onClick={() => setLabelForm({ ...labelForm, quantityUnit: unit })}
+                    >
+                      {unitLabel(unit)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label>
+                Quantidade de etiquetas
+                <input
+                  type="number"
+                  min="1"
+                  value={labelForm.labelCount}
+                  onChange={(event) => setLabelForm({ ...labelForm, labelCount: event.target.value })}
+                />
+              </label>
+
+              <label>
+                Data de emissão
+                <input
+                  type="date"
+                  value={labelForm.issuedAt}
+                  onChange={(event) => setLabelForm({ ...labelForm, issuedAt: event.target.value })}
+                />
+              </label>
+
+              <label>
+                Validade
+                <input
+                  type="date"
+                  value={labelForm.expiryDate}
+                  onChange={(event) => setLabelForm({ ...labelForm, expiryDate: event.target.value })}
+                />
+              </label>
+
+              <button className="primary" type="submit">Gerar etiquetas e baixar estoque</button>
+            </form>
+          </section>
+
+          <section className="module-content stock-wide">
+            <div className="stock-title-row">
+              <div>
+                <h2>Etiquetas geradas</h2>
+                <p className="stock-help">Histórico das etiquetas emitidas. Use imprimir para gerar as etiquetas físicas.</p>
+              </div>
+              <button className="secondary" onClick={printLabels}>Imprimir etiquetas</button>
+            </div>
+
+            {labelsHistory.length === 0 ? (
+              <div className="module-placeholder">
+                <strong>Nenhuma etiqueta gerada</strong>
+                <p>Gere uma etiqueta para acompanhar validade e histórico.</p>
+              </div>
+            ) : (
+              <div className="labels-grid print-area">
+                {labelsHistory.map((label) => {
+                  const days = diffDays(label.expiryDate);
+                  return (
+                    <article className={days < 0 ? "label-card expired" : days <= stockAlertDays ? "label-card warning" : "label-card"} key={label.id}>
+                      <div className="label-brand">Gestão à Mesa</div>
+                      <h3>{label.itemName}</h3>
+                      <strong>{formatStockDisplay(label.quantity, label.unit)}</strong>
+                      <span>Emissão: {formatDate(label.issuedAt)}</span>
+                      <span>Validade: {formatDate(label.expiryDate)}</span>
+                      <small>{label.code}</small>
+                      <button className="danger no-print" onClick={() => deleteLabel(label.id)}>Excluir</button>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </main>
       </section>
     );
   }
@@ -2105,19 +2379,7 @@ export default function App() {
 
         {page === "estoque" && renderStockModule()}
         {page === "checklist" && renderChecklistModule()}
-        {page === "etiquetas" && (
-          <section className="module-content">
-            <h2>Funcionalidades previstas</h2>
-            <div className="module-items">
-              {moduleInfo.items.map((item) => (
-                <div className="module-item" key={item}>
-                  <span>✓</span>
-                  <strong>{item}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+        {page === "etiquetas" && renderEtiquetasModule()}
 
         {page === "acesso" && renderAccessModule()}
       </main>

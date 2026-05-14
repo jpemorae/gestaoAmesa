@@ -219,3 +219,38 @@ Incluído:
   - é possível Retomar a atividade depois.
 - Ao retomar, o tempo já executado é preservado.
 - Ao finalizar, o sistema soma o tempo executado antes e depois da pendência.
+
+
+## V25 - Regra de status do Kanban ajustada
+
+Ajuste aplicado:
+- Atividade cadastrada aparece em "Não iniciado".
+- Ao clicar em Iniciar, vai para "Executando".
+- Ao clicar em Pendência, vai para "Pendência".
+- Ao finalizar, vai para "Concluído".
+- Removida regra automática que enviava atividade atrasada para Pendência sem clique do usuário.
+
+
+## V26 - Etiquetas funcional
+
+Funcionalidades trazidas para o novo projeto:
+- Geração de etiquetas por produto/item.
+- Quantidade por etiqueta.
+- Seleção de unidade:
+  - Grama
+  - Kilo
+  - Mililitro
+  - Litro
+  - Unidade
+- Quantidade de etiquetas.
+- Data de emissão.
+- Validade.
+- Baixa automática no estoque ao gerar etiquetas.
+- Validação de estoque insuficiente.
+- Histórico de etiquetas geradas.
+- Dashboard do módulo:
+  - Etiquetas emitidas
+  - Emitidas hoje
+  - Próximas do vencimento
+  - Vencidas
+- Impressão das etiquetas.
