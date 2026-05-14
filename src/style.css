@@ -2053,3 +2053,144 @@ td {
     box-shadow: none;
   }
 }
+
+
+/* V28 - Logo e nome fantasia do cliente na etiqueta */
+.label-brand-client {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.label-brand-client img,
+.label-logo-fallback {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid var(--gold);
+  background: #fff;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.label-logo-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3ead8;
+  color: var(--blue);
+  font-weight: 900;
+  font-size: 13px;
+}
+
+.label-brand-client span {
+  color: var(--gold);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+
+/* V29 - Governança operacional */
+.module-permission-box {
+  grid-column: 1 / -1;
+  background: #fff;
+  border: 1px solid #eee0d0;
+  border-radius: 14px;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.module-permission-box strong,
+.module-permission-box small {
+  display: block;
+}
+
+.module-permission-box small {
+  color: var(--muted);
+}
+
+.module-permission-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.module-permission-option {
+  border: 1px solid #d8d1c5;
+  border-radius: 12px;
+  padding: 10px;
+  background: #fdfbf5;
+  display: flex !important;
+  align-items: center;
+  flex-direction: row !important;
+  gap: 8px !important;
+}
+
+.module-permission-option input {
+  width: auto;
+  min-height: auto;
+}
+
+.operational-scope-box {
+  background: #f3ead8;
+  border: 1px solid #eadbbd;
+  border-radius: 14px;
+  padding: 12px;
+  color: var(--blue);
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.operational-scope-box.compact {
+  min-width: 220px;
+  margin-bottom: 0;
+}
+
+.operational-scope-box strong,
+.operational-scope-box span {
+  display: block;
+}
+
+@media (max-width: 760px) {
+  .module-permission-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .operational-scope-box.compact {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+
+/* V30 - Rastreabilidade por QRCode */
+.qr-box {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(7, 1fr);
+  gap: 2px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--blue);
+  border-radius: 8px;
+  margin: 6px 0;
+}
+
+.qr-box i { display: block; background: #eef1f4; border-radius: 1px; }
+.qr-box i.active { background: var(--blue); }
+
+.label-actions { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 6px; }
+.label-card b { color: var(--blue); }
+
+@media print {
+  .qr-box { width: 72px; height: 72px; }
+}

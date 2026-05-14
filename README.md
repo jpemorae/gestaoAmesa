@@ -265,3 +265,40 @@ Correção:
 - Mantida a conversão:
   - Kilo → Grama
   - Litro → Mililitro
+
+
+## V28 - Etiquetas com identidade do cliente
+
+Alteração:
+- As etiquetas geradas agora exibem:
+  - logo da empresa contratante;
+  - nome fantasia da empresa contratante.
+- Caso o cliente não tenha logo cadastrada, aparece um bloco com as iniciais.
+
+
+## V29 - Governança operacional de acesso
+
+Incluído:
+- Cadastro de funcionário agora cria login operacional.
+- Funcionário possui permissões por módulo:
+  - Controle de estoque
+  - Etiquetas
+  - Checklist
+- Perfil Operação:
+  - vê somente módulos liberados;
+  - no Checklist não vê filtros administrativos;
+  - visualiza apenas atividades da sua área/setor;
+  - no Kanban visualiza somente a sua área;
+  - não vê Histórico nem Acompanhamento do Checklist.
+- Gestor/Administrador continuam vendo filtros, histórico, dashboard e visão geral.
+
+
+## V30 - Rastreabilidade por QRCode nas etiquetas
+
+Mudança de processo:
+- Gerar/imprimir etiqueta NÃO baixa mais o estoque.
+- A etiqueta representa fracionamento/movimentação interna.
+- Cada etiqueta possui QRCode/código único.
+- A baixa no estoque acontece somente na leitura do QRCode, quando o produto é usado na produção.
+- Novo status da etiqueta: Disponível, Consumido ou Descartado.
+- Leitura de QRCode registra área, responsável e data/hora.

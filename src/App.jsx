@@ -300,6 +300,9 @@ export default function App() {
     expiryDate: ""
   });
   const [labelsHistory, setLabelsHistory] = useState([]);
+  const [labelConsumeCode, setLabelConsumeCode] = useState("");
+  const [labelConsumeArea, setLabelConsumeArea] = useState("");
+  const [labelConsumeOperator, setLabelConsumeOperator] = useState("");
 
   const [stockCadastroType, setStockCadastroType] = useState("produto");
   const [accessCadastroType, setAccessCadastroType] = useState("usuario");
@@ -318,7 +321,8 @@ export default function App() {
     telegramEnabled: false,
     telegramUsername: "",
     telegramChatId: "",
-    telegramPhone: ""
+    telegramPhone: "",
+    allowedModules: ["checklist"]
   });
 
   const [checklistPage, setChecklistPage] = useState("executar");
@@ -590,6 +594,8 @@ export default function App() {
           inputUnit: stockItemForm.unit,
           expiryDate,
           createdAt: new Date().toLocaleString("pt-BR"),
+      clientName: getCurrentClient()?.fantasyName || getCurrentClient()?.companyName || "Cliente",
+      clientLogo: getCurrentClient()?.logo || "",
           origin: "Cadastro inicial"
         },
         ...stockLots
@@ -664,13 +670,35 @@ export default function App() {
     const emailExists = stockUsers.some((user) => user.email.toLowerCase() === stockUserForm.email.toLowerCase());
     if (emailExists) return alert("Já existe um usuário com este e-mail.");
 
-    setStockUsers([
+    const newUserId = crypto.randomUUID();
+    const currentClient = getCurrentClient();
+
+    const newEmployee = {
+      id: newUserId,
+      ...stockUserForm,
+      userType: "client",
+      companyId: currentClient?.id || "cliente-divino-botequim",
+      createdAt: new Date().toLocaleDateString("pt-BR")
+    };
+
+    setStockUsers([newEmployee, ...stockUsers]);
+
+    setUsers([
       {
-        id: crypto.randomUUID(),
-        ...stockUserForm,
+        id: newUserId,
+        name: stockUserForm.name,
+        email: stockUserForm.email,
+        password: stockUserForm.password,
+        profile: stockUserForm.profile,
+        sector: stockUserForm.sector,
+        role: stockUserForm.role,
+        status: stockUserForm.status,
+        userType: "client",
+        companyId: currentClient?.id || "cliente-divino-botequim",
+        allowedModules: stockUserForm.allowedModules || ["checklist"],
         createdAt: new Date().toLocaleDateString("pt-BR")
       },
-      ...stockUsers
+      ...users
     ]);
 
     setStockUserForm({
@@ -684,13 +712,15 @@ export default function App() {
       telegramEnabled: false,
       telegramUsername: "",
       telegramChatId: "",
-      telegramPhone: ""
+      telegramPhone: "",
+      allowedModules: ["checklist"]
     });
   }
 
   function deleteStockUser(userId) {
     if (!confirm("Deseja excluir este usuário?")) return;
     setStockUsers(stockUsers.filter((user) => user.id !== userId));
+    setUsers(users.filter((user) => user.id !== userId));
   }
 
   function testTelegramUser(user) {
@@ -710,9 +740,13 @@ export default function App() {
   const checklistActivities = stockItems.filter((item) => item.type === "Processo" || item.type === "Atividade");
   const completedTodayIds = new Set(checklistHistory.filter((record) => record.date === today()).map((record) => record.activityId));
   const checklistAreas = ["Todas", ...Array.from(new Set(checklistActivities.map((activity) => activity.area).filter(Boolean)))];
-  const filteredChecklistActivities = checklistActivities.filter((activity) =>
-    checklistAreaFilter === "Todas" || activity.area === checklistAreaFilter
-  );
+  const filteredChecklistActivities = checklistActivities.filter((activity) => {
+    if (isOperationalUser()) {
+      return activity.area === getUserOperationalArea();
+    }
+
+    return checklistAreaFilter === "Todas" || activity.area === checklistAreaFilter;
+  });
 
   function startChecklistActivity(activity) {
     if (completedTodayIds.has(activity.id)) return;
@@ -730,7 +764,7 @@ export default function App() {
         activityId: activity.id,
         startedAt: currentTimeHHMM(),
         startedAtFull: new Date().toLocaleString("pt-BR"),
-        executor: checklistExecutor || pending?.executor || "Não informado",
+        executor: isOperationalUser() ? loggedUser.name : (checklistExecutor || pending?.executor || "Não informado"),
         accumulatedMinutes: pending?.accumulatedMinutes || 0
       }
     });
@@ -1389,24 +1423,31 @@ export default function App() {
         <h2>Executar checklist</h2>
         <p className="stock-help">Clique em iniciar quando começar e finalizar quando concluir. O sistema registra o horário do dispositivo.</p>
 
-        <div className="checklist-control-bar">
-          <label>
-            Área
-            <select value={checklistAreaFilter} onChange={(event) => setChecklistAreaFilter(event.target.value)}>
-              {checklistAreas.map((area) => <option key={area}>{area}</option>)}
-            </select>
-          </label>
+        {isOperationalUser() ? (
+          <div className="operational-scope-box">
+            <strong>Seu checklist</strong>
+            <span>Área: {getUserOperationalArea() || "Não informada"}</span>
+          </div>
+        ) : (
+          <div className="checklist-control-bar">
+            <label>
+              Área
+              <select value={checklistAreaFilter} onChange={(event) => setChecklistAreaFilter(event.target.value)}>
+                {checklistAreas.map((area) => <option key={area}>{area}</option>)}
+              </select>
+            </label>
 
-          <label>
-            Responsável pela execução
-            <select value={checklistExecutor} onChange={(event) => setChecklistExecutor(event.target.value)}>
-              <option value="">Selecionar responsável</option>
-              {stockUsers.filter((user) => user.status === "Ativo").map((user) => (
-                <option key={user.id} value={user.name}>{user.name} - {user.sector}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+            <label>
+              Responsável pela execução
+              <select value={checklistExecutor} onChange={(event) => setChecklistExecutor(event.target.value)}>
+                <option value="">Selecionar responsável</option>
+                {stockUsers.filter((user) => user.status === "Ativo").map((user) => (
+                  <option key={user.id} value={user.name}>{user.name} - {user.sector}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
 
         {checklistActivities.length === 0 ? (
           <div className="module-placeholder">
@@ -1527,17 +1568,21 @@ export default function App() {
         <aside className="stock-sidebar">
           <button className={checklistPage === "executar" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("executar")}>Executar checklist</button>
           <button className={checklistPage === "kanban" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("kanban")}>Kanban</button>
-          <button className={checklistPage === "atividades" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("atividades")}>Atividades</button>
-          <button className={checklistPage === "historico" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("historico")}>Histórico</button>
-          <button className={checklistPage === "acompanhamento" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("acompanhamento")}>Acompanhamento (dashboard)</button>
+          {!isOperationalUser() && (
+            <>
+              <button className={checklistPage === "atividades" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("atividades")}>Atividades</button>
+              <button className={checklistPage === "historico" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("historico")}>Histórico</button>
+              <button className={checklistPage === "acompanhamento" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("acompanhamento")}>Acompanhamento (dashboard)</button>
+            </>
+          )}
         </aside>
 
         <main className="stock-main">
           {checklistPage === "executar" && renderChecklistExecucao()}
           {checklistPage === "kanban" && renderKanbanModule()}
-          {checklistPage === "atividades" && renderChecklistAtividades()}
-          {checklistPage === "historico" && renderChecklistHistorico()}
-          {checklistPage === "acompanhamento" && renderAcompanhamentoChecklist()}
+          {!isOperationalUser() && checklistPage === "atividades" && renderChecklistAtividades()}
+          {!isOperationalUser() && checklistPage === "historico" && renderChecklistHistorico()}
+          {!isOperationalUser() && checklistPage === "acompanhamento" && renderAcompanhamentoChecklist()}
         </main>
       </section>
     );
@@ -1561,16 +1606,44 @@ export default function App() {
     return clients[0] || null;
   }
 
+  function isOperationalUser() {
+    return loggedUser?.userType === "client" && loggedUser?.profile === "Operação";
+  }
+
+  function isClientAdminOrManager() {
+    return loggedUser?.userType === "client" && ["Administrador", "Gestor"].includes(loggedUser?.profile);
+  }
+
+  function getUserOperationalArea() {
+    return loggedUser?.sector || loggedUser?.area || "";
+  }
+
   function getAllowedModules() {
     const currentClient = getCurrentClient();
-    if (!currentClient) return SOLUTION_MODULES;
-    return SOLUTION_MODULES.filter((module) => (currentClient.enabledModules || []).includes(module.id));
+    const clientModules = currentClient ? (currentClient.enabledModules || []) : SOLUTION_MODULES.map((module) => module.id);
+
+    if (loggedUser?.userType === "platform") {
+      return SOLUTION_MODULES.filter((module) => clientModules.includes(module.id));
+    }
+
+    if (loggedUser?.userType === "client" && loggedUser?.profile !== "Administrador") {
+      const userModules = loggedUser.allowedModules || ["checklist"];
+      return SOLUTION_MODULES.filter((module) => clientModules.includes(module.id) && userModules.includes(module.id));
+    }
+
+    return SOLUTION_MODULES.filter((module) => clientModules.includes(module.id));
   }
 
   function canAccessModule(moduleId) {
     if (loggedUser?.userType === "platform") return true;
     const currentClient = getCurrentClient();
-    return Boolean(currentClient?.enabledModules?.includes(moduleId));
+    const clientCanAccess = Boolean(currentClient?.enabledModules?.includes(moduleId));
+
+    if (!clientCanAccess) return false;
+
+    if (loggedUser?.profile === "Administrador") return true;
+
+    return Boolean((loggedUser?.allowedModules || ["checklist"]).includes(moduleId));
   }
 
   function openModuleFromHub(moduleId) {
@@ -1660,6 +1733,31 @@ export default function App() {
               <option>Inativo</option>
             </select>
           </label>
+
+          <div className="module-permission-box">
+            <strong>Permissões de módulo</strong>
+            <small>Defina quais funcionalidades este funcionário poderá acessar.</small>
+
+            <div className="module-permission-grid">
+              {SOLUTION_MODULES.filter((module) => module.id !== "acesso").map((module) => (
+                <label key={module.id} className="module-permission-option">
+                  <input
+                    type="checkbox"
+                    checked={(stockUserForm.allowedModules || []).includes(module.id)}
+                    onChange={(event) => {
+                      const current = stockUserForm.allowedModules || [];
+                      const next = event.target.checked
+                        ? [...current, module.id]
+                        : current.filter((item) => item !== module.id);
+
+                      setStockUserForm({ ...stockUserForm, allowedModules: next });
+                    }}
+                  />
+                  <span>{module.icon} {module.title}</span>
+                </label>
+              ))}
+            </div>
+          </div>
 
           <div className="telegram-user-box">
             <label className="telegram-toggle">
@@ -1838,9 +1936,13 @@ export default function App() {
 
   function renderKanbanModule() {
     const columns = ["Não iniciado", "Executando", "Pendência", "Concluído"];
-    const visibleActivities = checklistActivities.filter((activity) =>
-      kanbanAreaFilter === "Todas" || activity.area === kanbanAreaFilter
-    );
+    const visibleActivities = checklistActivities.filter((activity) => {
+      if (isOperationalUser()) {
+        return activity.area === getUserOperationalArea();
+      }
+
+      return kanbanAreaFilter === "Todas" || activity.area === kanbanAreaFilter;
+    });
 
     return (
       <section className="module-content checklist-wide">
@@ -1850,13 +1952,20 @@ export default function App() {
             <p className="stock-help">Acompanhe as atividades por status. Nova atividade entra como Não iniciado; ao iniciar vai para Executando; ao registrar pendência vai para Pendência.</p>
           </div>
 
-          <label>
-            Filtrar por área
-            <select value={kanbanAreaFilter} onChange={(event) => setKanbanAreaFilter(event.target.value)}>
-              <option>Todas</option>
-              {areas.map((area) => <option key={area}>{area}</option>)}
-            </select>
-          </label>
+          {isOperationalUser() ? (
+            <div className="operational-scope-box compact">
+              <strong>Área</strong>
+              <span>{getUserOperationalArea() || "Não informada"}</span>
+            </div>
+          ) : (
+            <label>
+              Filtrar por área
+              <select value={kanbanAreaFilter} onChange={(event) => setKanbanAreaFilter(event.target.value)}>
+                <option>Todas</option>
+                {areas.map((area) => <option key={area}>{area}</option>)}
+              </select>
+            </label>
+          )}
         </div>
 
         <div className="kanban-board">
@@ -1894,6 +2003,31 @@ export default function App() {
   }
 
 
+
+  function qrPatternFromCode(code) {
+    const source = String(code || "ETQ").split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    return Array.from({ length: 49 }, (_, index) => ((index * 7 + source + index) % 5) < 2);
+  }
+
+  function decrementStockByLabel(label) {
+    let remaining = Number(label.quantity || 0);
+
+    const updatedLots = stockLots.map((lot) => {
+      if (lot.itemId !== label.itemId || remaining <= 0) return lot;
+      const used = Math.min(Number(lot.quantity || 0), remaining);
+      remaining -= used;
+      return { ...lot, quantity: Number(lot.quantity || 0) - used };
+    });
+
+    if (remaining > 0) {
+      alert("Estoque insuficiente para dar baixa desta etiqueta.");
+      return false;
+    }
+
+    setStockLots(updatedLots);
+    return true;
+  }
+
   function getLabelItem() {
     return stockItemsView.find((item) => item.id === labelForm.itemId);
   }
@@ -1910,63 +2044,34 @@ export default function App() {
       total: labelsHistory.length,
       todayLabels,
       expired,
-      expiring
+      expiring,
+      available: labelsHistory.filter((label) => label.status === "Disponível").length,
+      consumed: labelsHistory.filter((label) => label.status === "Consumido").length,
+      discarded: labelsHistory.filter((label) => label.status === "Descartado").length
     };
   }
 
   function saveLabels(event) {
     event.preventDefault();
 
-    if (!labelForm.itemId) {
-      alert("Selecione um produto/item.");
-      return;
-    }
-
-    if (!labelForm.quantity || normalizeDecimal(labelForm.quantity) <= 0) {
-      alert("Informe a quantidade por etiqueta.");
-      return;
-    }
-
-    if (!labelForm.labelCount || Number(labelForm.labelCount) <= 0) {
-      alert("Informe a quantidade de etiquetas.");
-      return;
-    }
-
-    if (!labelForm.expiryDate) {
-      alert("Informe a validade.");
-      return;
-    }
+    if (!labelForm.itemId) return alert("Selecione um produto/item.");
+    if (!labelForm.quantity || normalizeDecimal(labelForm.quantity) <= 0) return alert("Informe a quantidade por etiqueta.");
+    if (!labelForm.labelCount || Number(labelForm.labelCount) <= 0) return alert("Informe a quantidade de etiquetas.");
+    if (!labelForm.expiryDate) return alert("Informe a validade.");
 
     const item = getLabelItem();
     const converted = toBaseUnit(labelForm.quantity, labelForm.quantityUnit);
-    const totalToRemove = converted.quantity * Number(labelForm.labelCount);
+    const totalFracionado = converted.quantity * Number(labelForm.labelCount);
 
-    if (!item || converted.unit !== item.stockUnit) {
-      alert("Unidade incompatível com o item selecionado.");
-      return;
-    }
+    if (!item || converted.unit !== item.stockUnit) return alert("Unidade incompatível com o item selecionado.");
 
     const totalAvailable = stockLots
       .filter((lot) => lot.itemId === item.id)
       .reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
 
-    if (totalAvailable < totalToRemove) {
-      alert(`Estoque insuficiente. Disponível: ${formatStockDisplay(totalAvailable, item.stockUnit)}.`);
-      return;
+    if (totalAvailable < totalFracionado) {
+      return alert(`Estoque insuficiente para fracionar. Disponível: ${formatStockDisplay(totalAvailable, item.stockUnit)}.`);
     }
-
-    let remaining = totalToRemove;
-    const updatedLots = stockLots.map((lot) => {
-      if (lot.itemId !== item.id || remaining <= 0) return lot;
-
-      const used = Math.min(Number(lot.quantity || 0), remaining);
-      remaining -= used;
-
-      return {
-        ...lot,
-        quantity: Number(lot.quantity || 0) - used
-      };
-    });
 
     const createdLabels = Array.from({ length: Number(labelForm.labelCount) }, (_, index) => ({
       id: crypto.randomUUID(),
@@ -1980,24 +2085,66 @@ export default function App() {
       displayUnit: labelForm.quantityUnit,
       issuedAt: labelForm.issuedAt || today(),
       expiryDate: labelForm.expiryDate,
-      createdAt: new Date().toLocaleString("pt-BR")
+      status: "Disponível",
+      createdAt: new Date().toLocaleString("pt-BR"),
+      clientName: getCurrentClient()?.fantasyName || getCurrentClient()?.companyName || "Cliente",
+      clientLogo: getCurrentClient()?.logo || ""
     }));
 
-    setStockLots(updatedLots);
     setLabelsHistory([...createdLabels, ...labelsHistory]);
-    setLabelForm({
-      itemId: "",
-      quantity: "",
-      quantityUnit: "g",
-      labelCount: 1,
-      issuedAt: today(),
-      expiryDate: ""
-    });
+    setLabelForm({ itemId: "", quantity: "", quantityUnit: "g", labelCount: 1, issuedAt: today(), expiryDate: "" });
+    alert("Etiqueta gerada. O estoque NÃO foi baixado. A baixa ocorrerá apenas na leitura do QRCode.");
   }
+
 
   function deleteLabel(labelId) {
     if (!confirm("Deseja excluir esta etiqueta do histórico?")) return;
     setLabelsHistory(labelsHistory.filter((label) => label.id !== labelId));
+  }
+
+  function consumeLabelByQr(event) {
+    event.preventDefault();
+
+    const code = labelConsumeCode.trim();
+    if (!code) return alert("Informe ou leia o código da etiqueta.");
+
+    const label = labelsHistory.find((item) => item.code === code);
+    if (!label) return alert("Etiqueta não encontrada.");
+    if (label.status === "Consumido") return alert("Esta etiqueta já foi consumida.");
+    if (label.status === "Descartado") return alert("Esta etiqueta está descartada e não pode ser consumida.");
+
+    const lowered = decrementStockByLabel(label);
+    if (!lowered) return;
+
+    setLabelsHistory(labelsHistory.map((item) =>
+      item.id === label.id
+        ? {
+            ...item,
+            status: "Consumido",
+            consumedAt: new Date().toLocaleString("pt-BR"),
+            consumedBy: labelConsumeOperator || loggedUser?.name || "Não informado",
+            consumedArea: labelConsumeArea || loggedUser?.sector || "Não informada"
+          }
+        : item
+    ));
+
+    setLabelConsumeCode("");
+    alert("Baixa realizada com sucesso.");
+  }
+
+  function discardLabel(labelId) {
+    const label = labelsHistory.find((item) => item.id === labelId);
+    if (!label) return;
+    if (label.status === "Consumido") return alert("Etiqueta consumida não pode ser descartada.");
+
+    const reason = window.prompt("Informe o motivo do descarte/perda:");
+    if (!reason || !reason.trim()) return;
+
+    setLabelsHistory(labelsHistory.map((item) =>
+      item.id === labelId
+        ? { ...item, status: "Descartado", discardReason: reason.trim(), discardedAt: new Date().toLocaleString("pt-BR"), discardedBy: loggedUser?.name || "Não informado" }
+        : item
+    ));
   }
 
   function printLabels() {
@@ -2018,7 +2165,7 @@ export default function App() {
         <main className="stock-main">
           <section className="module-content stock-wide">
             <h2>Etiquetas</h2>
-            <p className="stock-help">Gere etiquetas com validade, quantidade e baixa automática do estoque.</p>
+            <p className="stock-help">Gere etiquetas com QRCode. A impressão não baixa estoque; a baixa acontece apenas na leitura do QRCode.</p>
 
             <div className="acomp-grid labels-dash">
               <div className="acomp-card">
@@ -2027,9 +2174,14 @@ export default function App() {
                 <small>Histórico total</small>
               </div>
               <div className="acomp-card">
-                <span>Emitidas hoje</span>
-                <strong>{dash.todayLabels}</strong>
-                <small>Data atual</small>
+                <span>Disponíveis</span>
+                <strong>{dash.available}</strong>
+                <small>Aguardando consumo</small>
+              </div>
+              <div className="acomp-card">
+                <span>Consumidas</span>
+                <strong>{dash.consumed}</strong>
+                <small>Baixadas por QRCode</small>
               </div>
               <div className="acomp-card warning">
                 <span>Próx. vencimento</span>
@@ -2040,6 +2192,11 @@ export default function App() {
                 <span>Vencidas</span>
                 <strong>{dash.expired}</strong>
                 <small>Etiquetas vencidas</small>
+              </div>
+              <div className="acomp-card danger-card">
+                <span>Descartadas</span>
+                <strong>{dash.discarded}</strong>
+                <small>Perda/descarte</small>
               </div>
             </div>
           </section>
@@ -2122,7 +2279,39 @@ export default function App() {
                 />
               </label>
 
-              <button className="primary" type="submit">Gerar etiquetas e baixar estoque</button>
+              <button className="primary" type="submit">Gerar etiquetas com QRCode</button>
+            </form>
+          </section>
+
+          <section className="module-content stock-wide">
+            <h2>Leitura de QRCode / Baixa para produção</h2>
+            <p className="stock-help">A baixa no estoque acontece somente aqui, quando a cozinha usa o produto para produzir.</p>
+
+            <form className="stock-form-grid" onSubmit={consumeLabelByQr}>
+              <label>
+                Código da etiqueta / QRCode
+                <input value={labelConsumeCode} onChange={(event) => setLabelConsumeCode(event.target.value)} placeholder="Ex: ETQ-..." />
+              </label>
+
+              <label>
+                Área de consumo
+                <select value={labelConsumeArea} onChange={(event) => setLabelConsumeArea(event.target.value)}>
+                  <option value="">Selecione</option>
+                  {areas.map((area) => <option key={area}>{area}</option>)}
+                </select>
+              </label>
+
+              <label>
+                Responsável
+                <select value={labelConsumeOperator} onChange={(event) => setLabelConsumeOperator(event.target.value)}>
+                  <option value="">Selecionar responsável</option>
+                  {stockUsers.filter((user) => user.status === "Ativo").map((user) => (
+                    <option key={user.id} value={user.name}>{user.name} - {user.sector}</option>
+                  ))}
+                </select>
+              </label>
+
+              <button className="primary" type="submit">Ler QRCode e baixar estoque</button>
             </form>
           </section>
 
@@ -2130,7 +2319,7 @@ export default function App() {
             <div className="stock-title-row">
               <div>
                 <h2>Etiquetas geradas</h2>
-                <p className="stock-help">Histórico das etiquetas emitidas. Use imprimir para gerar as etiquetas físicas.</p>
+                <p className="stock-help">Histórico das etiquetas emitidas. Imprimir não baixa estoque; baixa somente via leitura do QRCode.</p>
               </div>
               <button className="secondary" onClick={printLabels}>Imprimir etiquetas</button>
             </div>
@@ -2146,13 +2335,35 @@ export default function App() {
                   const days = diffDays(label.expiryDate);
                   return (
                     <article className={days < 0 ? "label-card expired" : days <= stockAlertDays ? "label-card warning" : "label-card"} key={label.id}>
-                      <div className="label-brand">Gestão à Mesa</div>
+                      <div className="label-brand-client">
+                        {label.clientLogo ? (
+                          <img src={label.clientLogo} alt={label.clientName} />
+                        ) : (
+                          <div className="label-logo-fallback">{(label.clientName || "CL").slice(0, 2).toUpperCase()}</div>
+                        )}
+                        <span>{label.clientName || "Cliente"}</span>
+                      </div>
                       <h3>{label.itemName}</h3>
                       <strong>{formatStockDisplay(label.quantity, label.unit)}</strong>
+                      <span>Status: <b>{label.status || "Disponível"}</b></span>
                       <span>Emissão: {formatDate(label.issuedAt)}</span>
                       <span>Validade: {formatDate(label.expiryDate)}</span>
+
+                      <div className="qr-box" title={label.code}>
+                        {qrPatternFromCode(label.code).map((active, index) => (
+                          <i key={index} className={active ? "active" : ""}></i>
+                        ))}
+                      </div>
+
                       <small>{label.code}</small>
-                      <button className="danger no-print" onClick={() => deleteLabel(label.id)}>Excluir</button>
+                      {label.status === "Consumido" && <small>Consumido por {label.consumedBy} em {label.consumedAt}</small>}
+                      {label.status === "Descartado" && <small>Descartado: {label.discardReason}</small>}
+
+                      <div className="label-actions no-print">
+                        {label.status === "Disponível" && <button className="secondary" onClick={() => setLabelConsumeCode(label.code)}>Usar código</button>}
+                        {label.status === "Disponível" && <button className="danger" onClick={() => discardLabel(label.id)}>Descartar</button>}
+                        <button className="danger" onClick={() => deleteLabel(label.id)}>Excluir</button>
+                      </div>
                     </article>
                   );
                 })}
@@ -2203,6 +2414,7 @@ export default function App() {
                         <th>Perfil</th>
                         <th>Setor</th>
                         <th>Cargo</th>
+                        <th>Permissões</th>
                         <th>Telegram</th>
                         <th>Status</th>
                         <th>Ações</th>
@@ -2216,6 +2428,7 @@ export default function App() {
                           <td>{user.profile}</td>
                           <td>{user.sector}</td>
                           <td>{user.role}</td>
+                          <td>{(user.allowedModules || ["checklist"]).map((moduleId) => SOLUTION_MODULES.find((module) => module.id === moduleId)?.title).filter(Boolean).join(", ")}</td>
                           <td>{user.telegramEnabled ? "Ativo" : "Não"}</td>
                           <td>{user.status}</td>
                           <td>
