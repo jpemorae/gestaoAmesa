@@ -356,3 +356,28 @@ Correção:
 - Corrigido erro `saveProcessActivity is not defined`.
 - O cadastro de Processo / Atividade voltou a salvar corretamente.
 - A página não quebra mais ao abrir/criar processo ou atividade.
+
+
+## V36 - Recorrência de atividades
+
+Correção/evolução:
+- Campo "Quantas vezes repete?" desbloqueado.
+- Campo "Frequência" desbloqueado.
+- Se o processo/atividade for configurado como "Sim" para repetição:
+  - Diário: cria uma atividade para cada dia.
+  - Semanal: cria uma atividade a cada 7 dias.
+  - Mensal: cria uma atividade a cada 30 dias.
+  - Por turno: cria múltiplas atividades no mesmo dia.
+- Atividades passam a carregar data programada.
+- Checklist, Kanban e lista de atividades exibem a data programada.
+
+
+## V37 - Recorrência diária corrigida
+
+Correções:
+- "Quantas vezes repete?" e "Frequência" voltaram a bloquear quando "Se repete?" = Não.
+- Ao selecionar "Se repete?" = Sim, os campos são liberados.
+- Atividades diárias retornam automaticamente no dia seguinte após serem concluídas.
+- O colaborador vê novamente a atividade no novo dia.
+- Atividades semanais aparecem no mesmo dia da semana conforme a data inicial.
+- Atividades mensais aparecem no mesmo dia do mês conforme a data inicial.

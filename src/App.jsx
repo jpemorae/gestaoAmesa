@@ -155,6 +155,13 @@ function addDaysToToday(days) {
   return date.toISOString().split("T")[0];
 }
 
+function addDaysFromDate(dateString, days) {
+  const date = dateString ? new Date(dateString + "T00:00:00") : new Date();
+  date.setDate(date.getDate() + Number(days || 0));
+  return date.toISOString().split("T")[0];
+}
+
+
 function currentTimeHHMM() {
   return new Date().toTimeString().slice(0, 5);
 }
@@ -281,7 +288,7 @@ export default function App() {
     startTime: "",
     endTime: "",
     repeats: "Não",
-    repeatQuantity: "",
+    repeatQuantity: "1",
     frequency: "Diário"
   });
   const [stockEntryForm, setStockEntryForm] = useState({
@@ -742,7 +749,32 @@ export default function App() {
     );
   }
 
-  const checklistActivities = stockItems.filter((item) => item.type === "Processo" || item.type === "Atividade");
+  function shouldShowActivityToday(activity) {
+    if (!activity.scheduledDate) return true;
+
+    if (activity.repeats === "Sim" && activity.frequency === "Diário") {
+      return activity.scheduledDate <= today();
+    }
+
+    if (activity.repeats === "Sim" && activity.frequency === "Semanal") {
+      const startDate = new Date(activity.scheduledDate + "T00:00:00");
+      const currentDate = new Date(today() + "T00:00:00");
+      const diff = Math.floor((currentDate - startDate) / 86400000);
+      return diff >= 0 && diff % 7 === 0;
+    }
+
+    if (activity.repeats === "Sim" && activity.frequency === "Mensal") {
+      const startDate = new Date(activity.scheduledDate + "T00:00:00");
+      const currentDate = new Date(today() + "T00:00:00");
+      return currentDate >= startDate && currentDate.getDate() === startDate.getDate();
+    }
+
+    return activity.scheduledDate === today();
+  }
+
+  const checklistActivities = stockItems.filter((item) =>
+    (item.type === "Processo" || item.type === "Atividade") && shouldShowActivityToday(item)
+  );
   const completedTodayIds = new Set(checklistHistory.filter((record) => record.date === today()).map((record) => record.activityId));
   const checklistAreas = ["Todas", ...Array.from(new Set(checklistActivities.map((activity) => activity.area).filter(Boolean)))];
   const filteredChecklistActivities = checklistActivities.filter((activity) => {
@@ -983,7 +1015,7 @@ export default function App() {
               value={processActivityForm.repeatQuantity}
               onChange={(event) => setProcessActivityForm({ ...processActivityForm, repeatQuantity: event.target.value })}
               placeholder="Ex: 3"
-              disabled={processActivityForm.repeats === "Não"}
+             
             />
           </label>
 
@@ -992,7 +1024,7 @@ export default function App() {
             <select
               value={processActivityForm.frequency}
               onChange={(event) => setProcessActivityForm({ ...processActivityForm, frequency: event.target.value })}
-              disabled={processActivityForm.repeats === "Não"}
+             
             >
               <option>Diário</option>
               <option>Semanal</option>
@@ -1443,6 +1475,7 @@ export default function App() {
                   <th>Tipo</th>
                   <th>Atividade</th>
                   <th>Área</th>
+                  <th>Data</th>
                   <th>Horário previsto</th>
                   <th>Repete</th>
                   <th>Frequência</th>
@@ -1455,6 +1488,7 @@ export default function App() {
                     <td><span className="stock-type-badge">{activity.type}</span></td>
                     <td><strong>{activity.name}</strong></td>
                     <td>{activity.area || "--"}</td>
+                    <td>{formatDate(activity.scheduledDate || today())}</td>
                     <td>{activity.startTime || "--"} às {activity.endTime || "--"}</td>
                     <td>{activity.repeats === "Sim" ? `${activity.repeatQuantity || 0} vez(es)` : "Não"}</td>
                     <td>{activity.frequency || "--"}</td>
@@ -1517,7 +1551,7 @@ export default function App() {
                 <article className={done ? "checklist-card done" : pending ? "checklist-card pending" : running ? "checklist-card running" : "checklist-card"} key={activity.id}>
                   <div className="checklist-card-info">
                     <strong>{activity.name}</strong>
-                    <small>{activity.type} • Área: {activity.area || "--"} • Previsto: {activity.startTime || "--"} às {activity.endTime || "--"}</small>
+                    <small>{activity.type} • Área: {activity.area || "--"} • Data: {formatDate(activity.scheduledDate || today())} • Previsto: {activity.startTime || "--"} às {activity.endTime || "--"}</small>
 
                     <div className="checklist-time-grid">
                       <div>
@@ -1889,10 +1923,25 @@ export default function App() {
       return;
     }
 
-    setStockItems([
-      {
+    if (!processActivityForm.startTime) {
+      alert("Informe a hora de início.");
+      return;
+    }
+
+    if (!processActivityForm.endTime) {
+      alert("Informe a hora fim.");
+      return;
+    }
+
+    const repeats = processActivityForm.repeats === "Sim";
+    const repeatQuantity = repeats ? Math.max(1, Number(processActivityForm.repeatQuantity || 1)) : 1;
+    const frequency = repeats ? (processActivityForm.frequency || "Diário") : "Não se repete";
+
+    const activitiesToCreate = Array.from({ length: repeatQuantity }, (_, index) => {
+      return {
         id: crypto.randomUUID(),
-        name: processActivityForm.name.trim(),
+        name: repeatQuantity > 1 ? `${processActivityForm.name.trim()} ${index + 1}/${repeatQuantity}` : processActivityForm.name.trim(),
+        originalName: processActivityForm.name.trim(),
         type: processActivityForm.type,
         categoryId: "",
         category: "Processos e atividades",
@@ -1903,11 +1952,16 @@ export default function App() {
         startTime: processActivityForm.startTime,
         endTime: processActivityForm.endTime,
         repeats: processActivityForm.repeats,
-        repeatQuantity: processActivityForm.repeatQuantity,
-        frequency: processActivityForm.frequency
-      },
-      ...stockItems
-    ]);
+        repeatQuantity,
+        frequency,
+        scheduledDate: today(),
+        recurrenceIndex: index + 1,
+        recurrenceTotal: repeatQuantity,
+        recurringTemplate: repeats
+      };
+    });
+
+    setStockItems([...activitiesToCreate, ...stockItems]);
 
     setProcessActivityForm({
       name: "",
@@ -1916,16 +1970,17 @@ export default function App() {
       startTime: "",
       endTime: "",
       repeats: "Não",
-      repeatQuantity: "",
+      repeatQuantity: "1",
       frequency: "Diário"
     });
   }
+
 
   function renderAccessProcessForm() {
     return (
       <>
         <h2>Cadastrar processo ou atividade</h2>
-        <p className="stock-help">Cadastre rotinas operacionais que serão usadas no módulo Checklist.</p>
+        <p className="stock-help">Cadastre rotinas operacionais que serão usadas no módulo Checklist. Se marcar repetição diária, a atividade volta automaticamente no dia seguinte após concluída.</p>
 
         <form className="stock-form-grid" onSubmit={saveProcessActivity}>
           <label>
@@ -2117,7 +2172,7 @@ export default function App() {
                       <article className="kanban-card" key={activity.id}>
                         <strong>{activity.name}</strong>
                         <small>{activity.area || "Sem área"}</small>
-                        <small>{activity.startTime || "--"} às {activity.endTime || "--"}</small>
+                        <small>{formatDate(activity.scheduledDate || today())} • {activity.startTime || "--"} às {activity.endTime || "--"}</small>
                         <small>{activity.frequency || "--"}</small>
                         {runningChecklist[activity.id] && <small>{checklistEvidence[activity.id]?.image ? "📷 Evidência anexada" : "📷 Evidência pendente"}</small>}
                         {pendingChecklist[activity.id] && <small><strong>Motivo:</strong> {pendingChecklist[activity.id].reason}</small>}
