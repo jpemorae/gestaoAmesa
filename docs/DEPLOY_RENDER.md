@@ -1,0 +1,17 @@
+# Deploy no Render
+
+Root Directory:
+backend
+
+Build Command:
+npm install
+
+Start Command:
+npm start
+
+Environment Variables:
+PORT=10000
+SUPABASE_URL=https://SEU-PROJETO.supabase.co
+SUPABASE_ANON_KEY=SUA_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=SUA_SERVICE_ROLE_KEY
+FRONTEND_URL=https://seu-front.vercel.app

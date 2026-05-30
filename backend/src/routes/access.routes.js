@@ -1,0 +1,10 @@
+import { Router } from "express";
+import { requireAuth, requireProfile } from "../middleware/auth.js";
+import { listDepartments, createDepartment, listUsers, createUser } from "../controllers/access.controller.js";
+const router = Router();
+router.use(requireAuth);
+router.get("/departments", listDepartments);
+router.post("/departments", requireProfile(["Super Admin","Administrador","Gestor"]), createDepartment);
+router.get("/users", requireProfile(["Super Admin","Administrador","Gestor"]), listUsers);
+router.post("/users", requireProfile(["Super Admin","Administrador"]), createUser);
+export default router;

@@ -1,0 +1,10 @@
+import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import { listLabels, createLabels, consumeLabel, discardLabel } from "../controllers/label.controller.js";
+const router = Router();
+router.use(requireAuth);
+router.get("/", listLabels);
+router.post("/", createLabels);
+router.post("/:code/consume", consumeLabel);
+router.post("/:code/discard", discardLabel);
+export default router;

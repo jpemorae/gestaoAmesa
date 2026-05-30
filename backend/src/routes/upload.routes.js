@@ -1,0 +1,10 @@
+import { Router } from "express";
+import multer from "multer";
+import { requireAuth } from "../middleware/auth.js";
+import { uploadEvidence, uploadLogo } from "../controllers/upload.controller.js";
+const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
+router.use(requireAuth);
+router.post("/evidence", upload.single("file"), uploadEvidence);
+router.post("/logo", upload.single("file"), uploadLogo);
+export default router;

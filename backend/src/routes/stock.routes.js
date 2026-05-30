@@ -1,0 +1,10 @@
+import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import { listProducts, createProduct, listStockLots, createStockEntry } from "../controllers/stock.controller.js";
+const router = Router();
+router.use(requireAuth);
+router.get("/products", listProducts);
+router.post("/products", createProduct);
+router.get("/lots", listStockLots);
+router.post("/entries", createStockEntry);
+export default router;

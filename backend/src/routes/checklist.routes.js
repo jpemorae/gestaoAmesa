@@ -1,0 +1,12 @@
+import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import { listActivities, createActivity, startExecution, markPending, finishExecution, listExecutions } from "../controllers/checklist.controller.js";
+const router = Router();
+router.use(requireAuth);
+router.get("/activities", listActivities);
+router.post("/activities", createActivity);
+router.get("/executions", listExecutions);
+router.post("/executions/:activityId/start", startExecution);
+router.post("/executions/:executionId/pending", markPending);
+router.post("/executions/:executionId/finish", finishExecution);
+export default router;
