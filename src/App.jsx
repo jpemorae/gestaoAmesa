@@ -25,42 +25,6 @@ const initialClients = [
     enabledModules: ["estoque", "checklist", "etiquetas", "acesso"],
     createdAt: "Inicial"
   }
-
-  function handleRegister(event) {
-    event?.preventDefault();
-
-    if (!registerForm.name.trim()) return alert("Informe o nome.");
-    if (!registerForm.email.trim()) return alert("Informe o e-mail.");
-    if (!registerForm.phone.trim()) return alert("Informe o celular.");
-
-    const already = pendingRegistrations.some(r => r.email.toLowerCase() === registerForm.email.trim().toLowerCase())
-      || users.some(u => u.email.toLowerCase() === registerForm.email.trim().toLowerCase());
-
-    if (already) return alert("Já existe um cadastro com este e-mail.");
-
-    const newReg = {
-      id: crypto.randomUUID(),
-      name: registerForm.name.trim(),
-      email: registerForm.email.trim(),
-      phone: registerForm.phone.trim(),
-      status: "Pendente",
-      createdAt: new Date().toLocaleString("pt-BR")
-    };
-
-    setPendingRegistrations([newReg, ...pendingRegistrations]);
-    setRegisterForm({ name: "", email: "", phone: "" });
-    setShowRegister(false);
-    alert("Cadastro enviado. Aguarde a aprovação do administrador.");
-  }
-
-  function approveRegistration(regId) {
-    setPendingRegistrations(pendingRegistrations.map(r => r.id === regId ? { ...r, status: "Aprovado" } : r));
-  }
-
-  function rejectRegistration(regId) {
-    if (!confirm("Deseja realmente rejeitar este cadastro?")) return;
-    setPendingRegistrations(pendingRegistrations.map(r => r.id === regId ? { ...r, status: "Rejeitado" } : r));
-  }
 ];
 const initialUsers = [
   {
@@ -314,9 +278,6 @@ export default function App() {
 
   const [users, setUsers] = useState(initialUsers);
   const [editingUserId, setEditingUserId] = useState(null);
-  const [pendingRegistrations, setPendingRegistrations] = useState([]);
-  const [showRegister, setShowRegister] = useState(false);
-  const [registerForm, setRegisterForm] = useState({ name: "", email: "", phone: "" });
 
   const emptyClientForm = {
     companyName: "",
@@ -444,17 +405,6 @@ export default function App() {
       alert("Usuário ou senha inválidos, ou usuário inativo.");
       return;
     }
-
-    const nextPage = user.userType === "client" ? "hub" : "dashboard";
-
-    setLoggedUser(user);
-    setIsLogged(true);
-    setPage(nextPage);
-
-    localStorage.setItem(STORAGE_KEYS.loggedUser, JSON.stringify(user));
-    localStorage.setItem(STORAGE_KEYS.isLogged, "true");
-    localStorage.setItem(STORAGE_KEYS.page, nextPage);
-  }
 
     const nextPage = user.userType === "client" ? "hub" : "dashboard";
 
@@ -1267,56 +1217,6 @@ export default function App() {
                 ))}
               </div>
             </div>
-          </section>
-        )}
-
-        {page === "approvals" && loggedUser?.userType === "platform" && (
-          <section className="content">
-            <section className="panel compact-panel">
-              <div className="panel-title-row">
-                <h2>Cadastros pendentes</h2>
-              </div>
-
-              {pendingRegistrations.length === 0 ? (
-                <div className="empty">Nenhuma solicitação pendente.</div>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Nome</th>
-                        <th>E-mail</th>
-                        <th>Celular</th>
-                        <th>Data</th>
-                        <th>Status</th>
-                        <th>Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pendingRegistrations.map((r) => (
-                        <tr key={r.id} className={r.status !== "Pendente" ? "muted-row" : ""}>
-                          <td><strong>{r.name}</strong></td>
-                          <td>{r.email}</td>
-                          <td>{r.phone}</td>
-                          <td>{r.createdAt}</td>
-                          <td>{r.status}</td>
-                          <td>
-                            <div className="actions">
-                              {r.status === "Pendente" && <button className="primary" onClick={() => { approveRegistration(r.id);
-                                // criar usuário ativo com senha padrão
-                                const newUser = { id: crypto.randomUUID(), name: r.name, email: r.email, password: "changeme", profile: "Operação", userType: "client", companyId: null, status: "Ativo", createdAt: new Date().toLocaleDateString("pt-BR") };
-                                setUsers([newUser, ...users]);
-                              }}>Aprovar</button>}
-                              {r.status === "Pendente" && <button className="danger" onClick={() => rejectRegistration(r.id)}>Rejeitar</button>}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
           </section>
         )}
 
@@ -2937,41 +2837,10 @@ export default function App() {
             <button type="submit">Entrar</button>
           </form>
 
-          <div className="login-extras">
-            {!showRegister ? (
-              <>
-                <button className="secondary" onClick={() => setShowRegister(true)}>Cadastrar-se</button>
-
-                <div className="login-hint">
-                  <strong>Acesso inicial</strong>
-                  <span>admin@gestaoamesa.com / 123456</span>
-                  <span>admin@divino.com / 123456</span>
-                </div>
-              </>
-            ) : (
-              <form className="register-form" onSubmit={handleRegister}>
-                <h3>Cadastro</h3>
-                <label>
-                  Nome
-                  <input value={registerForm.name} onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })} placeholder="Seu nome" required />
-                </label>
-
-                <label>
-                  E-mail
-                  <input type="email" value={registerForm.email} onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })} placeholder="seu@exemplo.com" required />
-                </label>
-
-                <label>
-                  Celular
-                  <input value={registerForm.phone} onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })} placeholder="(00) 90000-0000" required />
-                </label>
-
-                <div className="register-actions">
-                  <button type="submit" className="primary">Enviar cadastro</button>
-                  <button type="button" className="secondary" onClick={() => setShowRegister(false)}>Cancelar</button>
-                </div>
-              </form>
-            )}
+          <div className="login-hint">
+            <strong>Acesso inicial</strong>
+            <span>admin@gestaoamesa.com / 123456</span>
+            <span>admin@divino.com / 123456</span>
           </div>
         </section>
       </main>
