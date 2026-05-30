@@ -25,6 +25,42 @@ const initialClients = [
     enabledModules: ["estoque", "checklist", "etiquetas", "acesso"],
     createdAt: "Inicial"
   }
+
+  function handleRegister(event) {
+    event?.preventDefault();
+
+    if (!registerForm.name.trim()) return alert("Informe o nome.");
+    if (!registerForm.email.trim()) return alert("Informe o e-mail.");
+    if (!registerForm.phone.trim()) return alert("Informe o celular.");
+
+    const already = pendingRegistrations.some(r => r.email.toLowerCase() === registerForm.email.trim().toLowerCase())
+      || users.some(u => u.email.toLowerCase() === registerForm.email.trim().toLowerCase());
+
+    if (already) return alert("Já existe um cadastro com este e-mail.");
+
+    const newReg = {
+      id: crypto.randomUUID(),
+      name: registerForm.name.trim(),
+      email: registerForm.email.trim(),
+      phone: registerForm.phone.trim(),
+      status: "Pendente",
+      createdAt: new Date().toLocaleString("pt-BR")
+    };
+
+    setPendingRegistrations([newReg, ...pendingRegistrations]);
+    setRegisterForm({ name: "", email: "", phone: "" });
+    setShowRegister(false);
+    alert("Cadastro enviado. Aguarde a aprovação do administrador.");
+  }
+
+  function approveRegistration(regId) {
+    setPendingRegistrations(pendingRegistrations.map(r => r.id === regId ? { ...r, status: "Aprovado" } : r));
+  }
+
+  function rejectRegistration(regId) {
+    if (!confirm("Deseja realmente rejeitar este cadastro?")) return;
+    setPendingRegistrations(pendingRegistrations.map(r => r.id === regId ? { ...r, status: "Rejeitado" } : r));
+  }
 ];
 const initialUsers = [
   {
@@ -409,40 +445,15 @@ export default function App() {
       return;
     }
 
-  function handleRegister(event) {
-    event?.preventDefault();
+    const nextPage = user.userType === "client" ? "hub" : "dashboard";
 
-    if (!registerForm.name.trim()) return alert("Informe o nome.");
-    if (!registerForm.email.trim()) return alert("Informe o e-mail.");
-    if (!registerForm.phone.trim()) return alert("Informe o celular.");
+    setLoggedUser(user);
+    setIsLogged(true);
+    setPage(nextPage);
 
-    const already = pendingRegistrations.some(r => r.email.toLowerCase() === registerForm.email.trim().toLowerCase())
-      || users.some(u => u.email.toLowerCase() === registerForm.email.trim().toLowerCase());
-
-    if (already) return alert("Já existe um cadastro com este e-mail.");
-
-    const newReg = {
-      id: crypto.randomUUID(),
-      name: registerForm.name.trim(),
-      email: registerForm.email.trim(),
-      phone: registerForm.phone.trim(),
-      status: "Pendente",
-      createdAt: new Date().toLocaleString("pt-BR")
-    };
-
-    setPendingRegistrations([newReg, ...pendingRegistrations]);
-    setRegisterForm({ name: "", email: "", phone: "" });
-    setShowRegister(false);
-    alert("Cadastro enviado. Aguarde a aprovação do administrador.");
-  }
-
-  function approveRegistration(regId) {
-    setPendingRegistrations(pendingRegistrations.map(r => r.id === regId ? { ...r, status: "Aprovado" } : r));
-  }
-
-  function rejectRegistration(regId) {
-    if (!confirm("Deseja realmente rejeitar este cadastro?")) return;
-    setPendingRegistrations(pendingRegistrations.map(r => r.id === regId ? { ...r, status: "Rejeitado" } : r));
+    localStorage.setItem(STORAGE_KEYS.loggedUser, JSON.stringify(user));
+    localStorage.setItem(STORAGE_KEYS.isLogged, "true");
+    localStorage.setItem(STORAGE_KEYS.page, nextPage);
   }
 
     const nextPage = user.userType === "client" ? "hub" : "dashboard";
