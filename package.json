@@ -1,6 +1,6 @@
 {
-  "name": "gestao-a-mesa-zero-v37-recorrencia-diaria-corrigida",
-  "version": "37.0.0",
+  "name": "gestao-a-mesa-zero-v38-sessao-persistente",
+  "version": "38.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

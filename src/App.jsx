@@ -1,5 +1,11 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import gestaoMesaLogo from "./assets/gestao-a-mesa-logo.png";
+
+const STORAGE_KEYS = {
+  loggedUser: "gestao_mesa_logged_user",
+  isLogged: "gestao_mesa_is_logged",
+  page: "gestao_mesa_current_page"
+};
 
 const initialClients = [
   {
@@ -230,6 +236,42 @@ export default function App() {
   const [login, setLogin] = useState({ email: "admin@gestaoamesa.com", password: "123456" });
   const [page, setPage] = useState("dashboard");
 
+  function clearSession() {
+    localStorage.removeItem(STORAGE_KEYS.loggedUser);
+    localStorage.removeItem(STORAGE_KEYS.isLogged);
+    localStorage.removeItem(STORAGE_KEYS.page);
+    setLoggedUser(null);
+    setIsLogged(false);
+    setPage("dashboard");
+  }
+
+  useEffect(() => {
+    const savedLoggedUser = localStorage.getItem(STORAGE_KEYS.loggedUser);
+    const savedIsLogged = localStorage.getItem(STORAGE_KEYS.isLogged);
+    const savedPage = localStorage.getItem(STORAGE_KEYS.page);
+
+    if (savedLoggedUser && savedIsLogged === "true") {
+      try {
+        const user = JSON.parse(savedLoggedUser);
+        setLoggedUser(user);
+        setIsLogged(true);
+        setPage(savedPage || (user.userType === "client" ? "hub" : "dashboard"));
+      } catch (error) {
+        localStorage.removeItem(STORAGE_KEYS.loggedUser);
+        localStorage.removeItem(STORAGE_KEYS.isLogged);
+        localStorage.removeItem(STORAGE_KEYS.page);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isLogged && loggedUser) {
+      localStorage.setItem(STORAGE_KEYS.loggedUser, JSON.stringify(loggedUser));
+      localStorage.setItem(STORAGE_KEYS.isLogged, "true");
+      localStorage.setItem(STORAGE_KEYS.page, page);
+    }
+  }, [isLogged, loggedUser, page]);
+
   const [clients, setClients] = useState(initialClients);
   const [editingClientId, setEditingClientId] = useState(null);
   const [showClientForm, setShowClientForm] = useState(false);
@@ -364,9 +406,15 @@ export default function App() {
       return;
     }
 
+    const nextPage = user.userType === "client" ? "hub" : "dashboard";
+
     setLoggedUser(user);
     setIsLogged(true);
-    setPage(user.userType === "client" ? "hub" : "dashboard");
+    setPage(nextPage);
+
+    localStorage.setItem(STORAGE_KEYS.loggedUser, JSON.stringify(user));
+    localStorage.setItem(STORAGE_KEYS.isLogged, "true");
+    localStorage.setItem(STORAGE_KEYS.page, nextPage);
   }
 
   function handleLogoUpload(event) {
