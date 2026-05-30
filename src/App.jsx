@@ -233,7 +233,7 @@ function LogoGestaoMesa({ small = false }) {
 export default function App() {
   const [isLogged, setIsLogged] = useState(false);
   const [loggedUser, setLoggedUser] = useState(null);
-  const [login, setLogin] = useState({ email: "admin@gestaoamesa.com", password: "123456" });
+  const [login, setLogin] = useState({ email: "", password: "" });
   const [page, setPage] = useState("dashboard");
 
   function clearSession() {
