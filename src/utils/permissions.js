@@ -1,3 +1,7 @@
+const OPERATION_PROFILES = ["Operação", "Operacao", "Operador", "OperaÃ§Ã£o"];
+const CLIENT_ADMIN_PROFILES = ["Administrador"];
+const CLIENT_MANAGER_PROFILES = ["Gestor", "Gerente", "Supervisor"];
+
 export function getCurrentClientForUser(user, clients) {
   if (user?.userType === "client") {
     return clients.find((client) => client.id === user.companyId) || null;
@@ -7,11 +11,14 @@ export function getCurrentClientForUser(user, clients) {
 }
 
 export function isOperationalUser(user) {
-  return user?.userType === "client" && isProfile(user, ["Operação", "OperaÃ§Ã£o"]);
+  return user?.userType === "client" && OPERATION_PROFILES.includes(user?.profile);
 }
 
 export function isClientAdminOrManager(user) {
-  return user?.userType === "client" && ["Administrador", "Gestor"].includes(user?.profile);
+  return (
+    user?.userType === "client" &&
+    [...CLIENT_ADMIN_PROFILES, ...CLIENT_MANAGER_PROFILES].includes(user?.profile)
+  );
 }
 
 export function getUserOperationalArea(user) {
@@ -25,7 +32,7 @@ export function getVisibleModules(user, company, modules) {
     return modules.filter((module) => contractedModules.includes(module.id));
   }
 
-  if (user?.userType === "client" && user?.profile !== "Administrador") {
+  if (user?.userType === "client" && !CLIENT_ADMIN_PROFILES.includes(user?.profile)) {
     const userModules = user.allowedModules || ["checklist"];
     return modules.filter((module) => contractedModules.includes(module.id) && userModules.includes(module.id));
   }
@@ -33,19 +40,18 @@ export function getVisibleModules(user, company, modules) {
   return modules.filter((module) => contractedModules.includes(module.id));
 }
 
-function isProfile(user, profiles) {
-  return profiles.includes(user?.profile);
-}
-
 export function canViewModule(user, company, moduleId) {
   if (user?.userType === "platform") return true;
   if (!company?.enabledModules?.includes(moduleId)) return false;
-  if (user?.profile === "Administrador") return true;
+  if (CLIENT_ADMIN_PROFILES.includes(user?.profile)) return true;
   return Boolean((user?.allowedModules || ["checklist"]).includes(moduleId));
 }
 
 export function canCreate(user) {
-  return user?.userType === "platform" || ["Administrador", "Gestor"].includes(user?.profile);
+  return (
+    user?.userType === "platform" ||
+    [...CLIENT_ADMIN_PROFILES, ...CLIENT_MANAGER_PROFILES].includes(user?.profile)
+  );
 }
 
 export function canEdit(user) {
@@ -53,7 +59,7 @@ export function canEdit(user) {
 }
 
 export function canDelete(user) {
-  return user?.userType === "platform" || user?.profile === "Administrador";
+  return user?.userType === "platform" || CLIENT_ADMIN_PROFILES.includes(user?.profile);
 }
 
 export function getVisibleActivities(user, activities) {

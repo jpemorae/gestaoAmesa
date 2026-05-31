@@ -1,224 +1,41 @@
 import React, { useEffect, useMemo, useState } from "react";
 import gestaoMesaLogo from "./assets/gestao-a-mesa-logo.png";
-
-const STORAGE_KEYS = {
-  loggedUser: "gestao_mesa_logged_user",
-  isLogged: "gestao_mesa_is_logged",
-  page: "gestao_mesa_current_page"
-};
-
-const initialClients = [
-  {
-    id: "cliente-divino-botequim",
-    companyName: "Divino Botequim",
-    fantasyName: "Divino",
-    document: "",
-    phone: "",
-    email: "admin@divino.com",
-    address: "",
-    paymentMethod: "Pix",
-    monthlyFee: 200,
-    dueDay: "10",
-    logo: "",
-    enabledModules: ["estoque", "checklist", "etiquetas", "acesso"],
-    status: "Ativo",
-    enabledModules: ["estoque", "checklist", "etiquetas", "acesso"],
-    createdAt: "Inicial"
-  }
-];
-const initialUsers = [
-  {
-    id: "admin-inicial",
-    name: "Administrador da Plataforma",
-    email: "admin@gestaoamesa.com",
-    password: "123456",
-    profile: "Administrador",
-    userType: "platform",
-    companyId: null,
-    status: "Ativo",
-    createdAt: "Inicial"
-  },
-  {
-    id: "cliente-divino",
-    name: "Administrador Divino",
-    email: "admin@divino.com",
-    password: "123456",
-    profile: "Administrador",
-    userType: "client",
-    companyId: "cliente-divino-botequim",
-    status: "Ativo",
-    createdAt: "Inicial"
-  }
-];
-
-const SOLUTION_MODULES = [
-  {
-    id: "estoque",
-    title: "Controle de estoque",
-    icon: "📦",
-    description: "Produtos, quantidades, pesos e validade."
-  },
-  {
-    id: "etiquetas",
-    title: "Etiquetas",
-    icon: "🏷️",
-    description: "Emissão, validade e impressão de etiquetas."
-  },
-  {
-    id: "checklist",
-    title: "Checklist",
-    icon: "✅",
-    description: "Rotinas, início, fim e histórico operacional."
-  },
-  {
-    id: "acesso",
-    title: "Gestão de acesso",
-    icon: "👥",
-    description: "Funcionários, perfis, permissões e notificações."
-  }
-];
-
-function money(value) {
-  return Number(value || 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL"
-  });
-}
-
-function today() {
-  return new Date().toISOString().split("T")[0];
-}
-
-function formatDate(date) {
-  if (!date) return "--";
-  const [year, month, day] = date.split("-");
-  return `${day}/${month}/${year}`;
-}
-
-function normalizeDecimal(value) {
-  if (value === undefined || value === null || value === "") return 0;
-  return Number(String(value).replace(",", "."));
-}
-
-function unitLabel(unit) {
-  const labels = {
-    g: "Grama",
-    kg: "Kilo",
-    un: "Unidade",
-    ml: "Mililitro",
-    L: "Litro"
-  };
-  return labels[unit] || unit;
-}
-
-function baseUnitFor(unit) {
-  if (unit === "kg" || unit === "g") return "g";
-  if (unit === "L" || unit === "ml") return "ml";
-  return unit || "un";
-}
-
-function compatibleUnitsFor(unit) {
-  const base = baseUnitFor(unit);
-  if (base === "g") return ["g", "kg"];
-  if (base === "ml") return ["ml", "L"];
-  return ["un"];
-}
-
-function toBaseUnit(quantity, unit) {
-  const value = normalizeDecimal(quantity);
-  if (unit === "kg") return { quantity: value * 1000, unit: "g" };
-  if (unit === "g") return { quantity: value, unit: "g" };
-  if (unit === "L") return { quantity: value * 1000, unit: "ml" };
-  if (unit === "ml") return { quantity: value, unit: "ml" };
-  return { quantity: value, unit };
-}
-
-function formatQuantity(value) {
-  return Number(value || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
-}
-
-function formatStockDisplay(value, unit) {
-  const number = Number(value || 0);
-  if (unit === "g" && number >= 1000) {
-    return `${(number / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 3 })} Kilo`;
-  }
-  if (unit === "ml" && number >= 1000) {
-    return `${(number / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 3 })} Litro`;
-  }
-  return `${formatQuantity(number)} ${unitLabel(unit)}`;
-}
-
-function diffDays(date) {
-  if (!date) return 999;
-  const start = new Date(today() + "T00:00:00");
-  const end = new Date(date + "T00:00:00");
-  return Math.ceil((end - start) / 86400000);
-}
-
-function addDaysToToday(days) {
-  const date = new Date();
-  date.setDate(date.getDate() + Number(days || 0));
-  return date.toISOString().split("T")[0];
-}
-
-function addDaysFromDate(dateString, days) {
-  const date = dateString ? new Date(dateString + "T00:00:00") : new Date();
-  date.setDate(date.getDate() + Number(days || 0));
-  return date.toISOString().split("T")[0];
-}
-
-
-function currentTimeHHMM() {
-  return new Date().toTimeString().slice(0, 5);
-}
-
-function timeToMinutes(time) {
-  if (!time || !time.includes(":")) return null;
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours * 60 + minutes;
-}
-
-function durationText(start, end) {
-  return durationFromMinutes(minutesBetween(start, end));
-}
-
-function minutesBetween(start, end) {
-  const startMin = timeToMinutes(start);
-  const endMin = timeToMinutes(end);
-
-  if (startMin === null || endMin === null) return 0;
-
-  return endMin >= startMin ? endMin - startMin : (24 * 60 - startMin) + endMin;
-}
-
-function durationFromMinutes(total) {
-  const safeTotal = Math.max(0, Number(total || 0));
-  const hours = Math.floor(safeTotal / 60);
-  const minutes = safeTotal % 60;
-
-  if (hours === 0) return `${minutes} min`;
-  if (minutes === 0) return `${hours}h`;
-  return `${hours}h ${minutes}min`;
-}
-
-function punctualityStatus(plannedStart, plannedEnd, realStart, realEnd) {
-  const ps = timeToMinutes(plannedStart);
-  const pe = timeToMinutes(plannedEnd);
-  const rs = timeToMinutes(realStart);
-  const re = timeToMinutes(realEnd);
-
-  if (rs === null || re === null) return "Sem horário real";
-  if (ps === null || pe === null) return "Sem horário previsto";
-
-  const tolerance = 10;
-  const startedOnTime = rs <= ps + tolerance;
-  const finishedOnTime = re <= pe + tolerance;
-
-  if (startedOnTime && finishedOnTime) return "Dentro do horário";
-  if (!startedOnTime && !finishedOnTime) return "Iniciou e terminou fora do horário";
-  if (!startedOnTime) return "Iniciou fora do horário";
-  return "Terminou fora do horário";
-}
+import { initialClients, initialUsers, SOLUTION_MODULES } from "./data/mockData";
+import {
+  authenticateUser,
+  clearStoredSession,
+  getInitialPageForUser,
+  persistSession,
+  restoreSession
+} from "./services/authService";
+import {
+  addDaysFromDate,
+  addDaysToToday,
+  currentTimeHHMM,
+  diffDays,
+  durationText,
+  formatDate,
+  punctualityStatus,
+  today
+} from "./utils/date";
+import {
+  baseUnitFor,
+  compatibleUnitsFor,
+  formatQuantity,
+  formatStockDisplay,
+  money,
+  normalizeDecimal,
+  toBaseUnit,
+  unitLabel
+} from "./utils/units";
+import {
+  canViewModule,
+  getCurrentClientForUser,
+  getUserOperationalArea as getPermissionOperationalArea,
+  getVisibleModules,
+  isClientAdminOrManager as isPermissionClientAdminOrManager,
+  isOperationalUser as isPermissionOperationalUser
+} from "./utils/permissions";
 
 function LogoGestaoMesa({ small = false }) {
   return (
@@ -237,38 +54,25 @@ export default function App() {
   const [page, setPage] = useState("dashboard");
 
   function clearSession() {
-    localStorage.removeItem(STORAGE_KEYS.loggedUser);
-    localStorage.removeItem(STORAGE_KEYS.isLogged);
-    localStorage.removeItem(STORAGE_KEYS.page);
+    clearStoredSession();
     setLoggedUser(null);
     setIsLogged(false);
     setPage("dashboard");
   }
 
   useEffect(() => {
-    const savedLoggedUser = localStorage.getItem(STORAGE_KEYS.loggedUser);
-    const savedIsLogged = localStorage.getItem(STORAGE_KEYS.isLogged);
-    const savedPage = localStorage.getItem(STORAGE_KEYS.page);
+    const session = restoreSession();
 
-    if (savedLoggedUser && savedIsLogged === "true") {
-      try {
-        const user = JSON.parse(savedLoggedUser);
-        setLoggedUser(user);
-        setIsLogged(true);
-        setPage(savedPage || (user.userType === "client" ? "hub" : "dashboard"));
-      } catch (error) {
-        localStorage.removeItem(STORAGE_KEYS.loggedUser);
-        localStorage.removeItem(STORAGE_KEYS.isLogged);
-        localStorage.removeItem(STORAGE_KEYS.page);
-      }
+    if (session.isLogged) {
+      setLoggedUser(session.user);
+      setIsLogged(true);
+      setPage(session.page);
     }
   }, []);
 
   useEffect(() => {
     if (isLogged && loggedUser) {
-      localStorage.setItem(STORAGE_KEYS.loggedUser, JSON.stringify(loggedUser));
-      localStorage.setItem(STORAGE_KEYS.isLogged, "true");
-      localStorage.setItem(STORAGE_KEYS.page, page);
+      persistSession(loggedUser, page);
     }
   }, [isLogged, loggedUser, page]);
 
@@ -394,27 +198,20 @@ export default function App() {
   function handleLogin(event) {
     event.preventDefault();
 
-    const user = users.find(
-      (item) =>
-        item.email.toLowerCase() === login.email.trim().toLowerCase() &&
-        item.password === login.password &&
-        item.status === "Ativo"
-    );
+    const user = authenticateUser(login, users);
 
     if (!user) {
       alert("Usuário ou senha inválidos, ou usuário inativo.");
       return;
     }
 
-    const nextPage = user.userType === "client" ? "hub" : "dashboard";
+    const nextPage = getInitialPageForUser(user);
 
     setLoggedUser(user);
     setIsLogged(true);
     setPage(nextPage);
 
-    localStorage.setItem(STORAGE_KEYS.loggedUser, JSON.stringify(user));
-    localStorage.setItem(STORAGE_KEYS.isLogged, "true");
-    localStorage.setItem(STORAGE_KEYS.page, nextPage);
+    persistSession(user, nextPage);
   }
 
   function handleLogoUpload(event) {
@@ -1765,51 +1562,27 @@ export default function App() {
   }
 
   function getCurrentClient() {
-    if (loggedUser?.userType === "client") {
-      return clients.find((client) => client.id === loggedUser.companyId) || clients[0] || null;
-    }
-
-    return clients[0] || null;
+    return getCurrentClientForUser(loggedUser, clients);
   }
 
   function isOperationalUser() {
-    return loggedUser?.userType === "client" && loggedUser?.profile === "Operação";
+    return isPermissionOperationalUser(loggedUser);
   }
 
   function isClientAdminOrManager() {
-    return loggedUser?.userType === "client" && ["Administrador", "Gestor"].includes(loggedUser?.profile);
+    return isPermissionClientAdminOrManager(loggedUser);
   }
 
   function getUserOperationalArea() {
-    return loggedUser?.sector || loggedUser?.area || "";
+    return getPermissionOperationalArea(loggedUser);
   }
 
   function getAllowedModules() {
-    const currentClient = getCurrentClient();
-    const clientModules = currentClient ? (currentClient.enabledModules || []) : SOLUTION_MODULES.map((module) => module.id);
-
-    if (loggedUser?.userType === "platform") {
-      return SOLUTION_MODULES.filter((module) => clientModules.includes(module.id));
-    }
-
-    if (loggedUser?.userType === "client" && loggedUser?.profile !== "Administrador") {
-      const userModules = loggedUser.allowedModules || ["checklist"];
-      return SOLUTION_MODULES.filter((module) => clientModules.includes(module.id) && userModules.includes(module.id));
-    }
-
-    return SOLUTION_MODULES.filter((module) => clientModules.includes(module.id));
+    return getVisibleModules(loggedUser, getCurrentClient(), SOLUTION_MODULES);
   }
 
   function canAccessModule(moduleId) {
-    if (loggedUser?.userType === "platform") return true;
-    const currentClient = getCurrentClient();
-    const clientCanAccess = Boolean(currentClient?.enabledModules?.includes(moduleId));
-
-    if (!clientCanAccess) return false;
-
-    if (loggedUser?.profile === "Administrador") return true;
-
-    return Boolean((loggedUser?.allowedModules || ["checklist"]).includes(moduleId));
+    return canViewModule(loggedUser, getCurrentClient(), moduleId);
   }
 
   function openModuleFromHub(moduleId) {

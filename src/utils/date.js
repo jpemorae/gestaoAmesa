@@ -9,7 +9,7 @@ export function formatDate(date) {
 }
 
 export function diffDays(date) {
-  if (!date) return 0;
+  if (!date) return 999;
   const start = new Date(today() + "T00:00:00");
   const end = new Date(date + "T00:00:00");
   return Math.ceil((end - start) / 86400000);
@@ -32,22 +32,21 @@ export function currentTimeHHMM() {
 }
 
 export function timeToMinutes(time) {
-  if (!time) return null;
+  if (!time || !time.includes(":")) return null;
   const [hours, minutes] = time.split(":").map(Number);
   return hours * 60 + minutes;
 }
 
 export function durationText(start, end) {
-  const minutes = minutesBetween(start, end);
-  return minutes === null ? "--" : durationFromMinutes(minutes);
+  return durationFromMinutes(minutesBetween(start, end));
 }
 
 export function minutesBetween(start, end) {
   const startMin = timeToMinutes(start);
   const endMin = timeToMinutes(end);
 
-  if (startMin === null || endMin === null) return null;
-  return Math.max(0, endMin - startMin);
+  if (startMin === null || endMin === null) return 0;
+  return endMin >= startMin ? endMin - startMin : (24 * 60 - startMin) + endMin;
 }
 
 export function durationFromMinutes(total) {
@@ -55,8 +54,9 @@ export function durationFromMinutes(total) {
   const hours = Math.floor(safeTotal / 60);
   const minutes = safeTotal % 60;
 
-  if (hours > 0) return `${hours}h ${minutes}min`;
-  return `${minutes}min`;
+  if (hours === 0) return `${minutes} min`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}min`;
 }
 
 export function punctualityStatus(plannedStart, plannedEnd, realStart, realEnd) {
@@ -65,7 +65,8 @@ export function punctualityStatus(plannedStart, plannedEnd, realStart, realEnd) 
   const rs = timeToMinutes(realStart);
   const re = timeToMinutes(realEnd);
 
-  if ([ps, pe, rs, re].some((value) => value === null)) return "Sem horário planejado";
+  if (rs === null || re === null) return "Sem horário real";
+  if (ps === null || pe === null) return "Sem horário previsto";
 
   const tolerance = 10;
   const startedOnTime = rs <= ps + tolerance;
