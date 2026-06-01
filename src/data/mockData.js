@@ -6,6 +6,12 @@ export const STORAGE_KEYS = {
 
 export const SOLUTION_MODULES = [
   {
+    id: "acompanhamento",
+    title: "Dashboard",
+    icon: "📊",
+    description: "Indicadores operacionais da empresa."
+  },
+  {
     id: "estoque",
     title: "Controle de estoque",
     icon: "📦",
@@ -44,7 +50,7 @@ export const initialClients = [
     monthlyFee: 200,
     dueDay: "10",
     logo: "",
-    enabledModules: ["estoque", "checklist", "etiquetas", "acesso"],
+    enabledModules: ["acompanhamento", "estoque", "checklist", "etiquetas", "acesso"],
     financialStatus: "Em dia",
     themeColor: "#0b2f4f",
     status: "Ativo",

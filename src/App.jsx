@@ -1,6 +1,17 @@
-import React, { useEffect, useMemo, useState } from "react";
-import gestaoMesaLogo from "./assets/gestao-a-mesa-logo.png";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { initialClients, initialUsers, SOLUTION_MODULES } from "./data/mockData";
+import { MODULE_INFO } from "./data/moduleInfo";
+import { AppShell } from "./layout/AppShell";
+import { LoginPage } from "./layout/LoginPage";
+import { ModuleShell } from "./layout/ModuleShell";
+import { ClientDashboard } from "./modules/dashboards/ClientDashboard";
+import { HubPage } from "./modules/hub/HubPage";
+import { KanbanBoard } from "./modules/kanban/KanbanBoard";
+import { ClientCardsPage } from "./modules/platform/ClientCardsPage";
+import { ClientManagementPage } from "./modules/platform/ClientManagementPage";
+import { PlatformDashboard } from "./modules/platform/PlatformDashboard";
+import { PlatformUsersPage } from "./modules/platform/PlatformUsersPage";
+import { OperationalModuleLayout } from "./modules/shared/OperationalModuleLayout";
 import {
   authenticateUser,
   clearStoredSession,
@@ -13,8 +24,10 @@ import {
   addDaysToToday,
   currentTimeHHMM,
   diffDays,
+  durationFromMinutes,
   durationText,
   formatDate,
+  minutesBetween,
   punctualityStatus,
   today
 } from "./utils/date";
@@ -36,17 +49,9 @@ import {
   isClientAdminOrManager as isPermissionClientAdminOrManager,
   isOperationalUser as isPermissionOperationalUser
 } from "./utils/permissions";
-
-function LogoGestaoMesa({ small = false }) {
-  return (
-    <img
-      src={gestaoMesaLogo}
-      alt="Gestão à Mesa"
-      className={small ? "brand-logo small" : "brand-logo"}
-    />
-  );
-}
-
+import { getQrActionUrl } from "./utils/qr";
+import { usePersistentState } from "./hooks/usePersistentState";
+import { useTenantPersistentState } from "./hooks/useTenantPersistentState";
 export default function App() {
   const [isLogged, setIsLogged] = useState(false);
   const [loggedUser, setLoggedUser] = useState(null);
@@ -76,11 +81,13 @@ export default function App() {
     }
   }, [isLogged, loggedUser, page]);
 
-  const [clients, setClients] = useState(initialClients);
+  const [clients, setClients] = usePersistentState("gestao_mesa_clients", initialClients);
+  const [viewedClientId, setViewedClientId] = usePersistentState("gestao_mesa_viewed_client", initialClients[0]?.id || "");
+  const activeCompanyId = loggedUser?.userType === "client" ? loggedUser.companyId : viewedClientId || initialClients[0]?.id;
   const [editingClientId, setEditingClientId] = useState(null);
   const [showClientForm, setShowClientForm] = useState(false);
 
-  const [users, setUsers] = useState(initialUsers);
+  const [users, setUsers] = usePersistentState("gestao_mesa_users", initialUsers);
   const [editingUserId, setEditingUserId] = useState(null);
 
   const emptyClientForm = {
@@ -93,7 +100,11 @@ export default function App() {
     paymentMethod: "Pix",
     monthlyFee: "",
     dueDay: "10",
-    logo: ""
+    logo: "",
+    financialStatus: "Em dia",
+    themeColor: "#0b2f4f",
+    status: "Ativo",
+    enabledModules: ["acompanhamento", "estoque", "etiquetas", "checklist", "acesso"]
   };
 
   const emptyUserForm = {
@@ -108,13 +119,14 @@ export default function App() {
   const [userForm, setUserForm] = useState(emptyUserForm);
 
   const [stockPage, setStockPage] = useState("cadastro");
-  const [stockCategories, setStockCategories] = useState([
+  const legacyCompanyId = initialClients[0]?.id;
+  const [stockCategories, setStockCategories] = useTenantPersistentState("gestao_mesa_stock_categories", activeCompanyId, [
     { id: "cat-comida", name: "Comida" },
     { id: "cat-bebida", name: "Bebida" },
     { id: "cat-limpeza", name: "Limpeza" }
-  ]);
-  const [stockItems, setStockItems] = useState([]);
-  const [stockLots, setStockLots] = useState([]);
+  ], legacyCompanyId);
+  const [stockItems, setStockItems] = useTenantPersistentState("gestao_mesa_stock_products", activeCompanyId, [], legacyCompanyId);
+  const [stockLots, setStockLots] = useTenantPersistentState("gestao_mesa_stock_lots", activeCompanyId, [], legacyCompanyId);
   const [stockSearch, setStockSearch] = useState("");
   const [stockCategoryName, setStockCategoryName] = useState("");
   const [stockAlertDays, setStockAlertDays] = useState(2);
@@ -152,7 +164,7 @@ export default function App() {
     issuedAt: today(),
     expiryDate: ""
   });
-  const [labelsHistory, setLabelsHistory] = useState([]);
+  const [labelsHistory, setLabelsHistory] = useTenantPersistentState("gestao_mesa_labels", activeCompanyId, [], legacyCompanyId);
   const [labelConsumeCode, setLabelConsumeCode] = useState("");
   const [labelConsumeArea, setLabelConsumeArea] = useState("");
   const [labelConsumeOperator, setLabelConsumeOperator] = useState("");
@@ -164,9 +176,9 @@ export default function App() {
   const [stockCadastroType, setStockCadastroType] = useState("produto");
   const [accessCadastroType, setAccessCadastroType] = useState("usuario");
   const [areaForm, setAreaForm] = useState("");
-  const [areas, setAreas] = useState(["Cozinha", "Salão", "Estoque", "Bar"]);
+  const [areas, setAreas] = useTenantPersistentState("gestao_mesa_areas", activeCompanyId, ["Cozinha", "Salão", "Estoque", "Bar"], legacyCompanyId);
   const [kanbanAreaFilter, setKanbanAreaFilter] = useState("Todas");
-  const [stockUsers, setStockUsers] = useState([]);
+  const [stockUsers, setStockUsers] = useTenantPersistentState("gestao_mesa_company_users", activeCompanyId, [], legacyCompanyId);
   const [stockUserForm, setStockUserForm] = useState({
     name: "",
     email: "",
@@ -183,22 +195,48 @@ export default function App() {
   });
 
   const [checklistPage, setChecklistPage] = useState("executar");
-  const [runningChecklist, setRunningChecklist] = useState({});
-  const [pendingChecklist, setPendingChecklist] = useState({});
-  const [checklistEvidence, setChecklistEvidence] = useState({});
-  const [checklistHistory, setChecklistHistory] = useState([]);
+  const [runningChecklist, setRunningChecklist] = useTenantPersistentState("gestao_mesa_checklist_running", activeCompanyId, {}, legacyCompanyId);
+  const [pendingChecklist, setPendingChecklist] = useTenantPersistentState("gestao_mesa_checklist_pending", activeCompanyId, {}, legacyCompanyId);
+  const [checklistEvidence, setChecklistEvidence] = useTenantPersistentState("gestao_mesa_checklist_evidence", activeCompanyId, {}, legacyCompanyId);
+  const [checklistHistory, setChecklistHistory] = useTenantPersistentState("gestao_mesa_checklist_history", activeCompanyId, [], legacyCompanyId);
   const [checklistAreaFilter, setChecklistAreaFilter] = useState("Todas");
   const [checklistExecutor, setChecklistExecutor] = useState("");
+
+  useEffect(() => {
+    const migrationKey = "gestao_mesa_migration_dashboard_module_v1";
+    if (localStorage.getItem(migrationKey)) return;
+
+    setClients((currentClients) => currentClients.map((client) => ({
+      ...client,
+      enabledModules: Array.from(new Set(["acompanhamento", ...(client.enabledModules || [])]))
+    })));
+    localStorage.setItem(migrationKey, "true");
+  }, [setClients]);
 
   const monthlyRevenue = useMemo(
     () => clients.reduce((sum, client) => sum + Number(client.monthlyFee || 0), 0),
     [clients]
   );
+  const outstandingRevenue = useMemo(
+    () => clients
+      .filter((client) => client.financialStatus !== "Em dia")
+      .reduce((sum, client) => sum + Number(client.monthlyFee || 0), 0),
+    [clients]
+  );
+
+  useEffect(() => {
+    if (!isLogged) return;
+    const code = new URLSearchParams(window.location.search).get("etiqueta");
+    if (!code) return;
+    setQrActionCode(code);
+    setLabelConsumeCode(code);
+    setPage("qr-action");
+  }, [isLogged]);
 
   function handleLogin(event) {
     event.preventDefault();
 
-    const user = authenticateUser(login, users);
+    const user = authenticateUser(login, users, clients);
 
     if (!user) {
       alert("Usuário ou senha inválidos, ou usuário inativo.");
@@ -271,7 +309,7 @@ export default function App() {
       fantasyName: clientForm.fantasyName.trim() || clientForm.companyName.trim(),
       monthlyFee: Number(clientForm.monthlyFee || 0),
       createdAt: new Date().toLocaleDateString("pt-BR"),
-      status: "Ativo"
+      status: clientForm.status || "Ativo"
     };
 
     setClients([newClient, ...clients]);
@@ -293,7 +331,10 @@ export default function App() {
       monthlyFee: client.monthlyFee || "",
       dueDay: client.dueDay || "10",
       logo: client.logo || "",
-      enabledModules: client.enabledModules || ["estoque", "checklist", "etiquetas"]
+      financialStatus: client.financialStatus || "Em dia",
+      themeColor: client.themeColor || "#0b2f4f",
+      status: client.status || "Ativo",
+      enabledModules: client.enabledModules || ["acompanhamento", "estoque", "checklist", "etiquetas"]
     });
     setPage("clients");
   }
@@ -301,6 +342,19 @@ export default function App() {
   function deleteClient(clientId) {
     if (!confirm("Deseja excluir este cliente?")) return;
     setClients(clients.filter((client) => client.id !== clientId));
+  }
+
+  function toggleClientStatus(clientId) {
+    setClients(clients.map((client) =>
+      client.id === clientId
+        ? { ...client, status: client.status === "Ativo" ? "Inativo" : "Ativo" }
+        : client
+    ));
+  }
+
+  function openClientWorkspace(clientId) {
+    setViewedClientId(clientId);
+    setPage("hub");
   }
 
   function saveUser(event) {
@@ -376,8 +430,7 @@ export default function App() {
   }
 
   function logout() {
-    setIsLogged(false);
-    setLoggedUser(null);
+    clearSession();
     setLogin({ email: "", password: "" });
   }
 
@@ -1279,24 +1332,22 @@ export default function App() {
   }
 
   function renderStockModule() {
-    return (
-      <section className="stock-workspace">
-        <aside className="stock-sidebar">
-          <button className={stockPage === "cadastro" ? "stock-nav active" : "stock-nav"} onClick={() => setStockPage("cadastro")}>Cadastro</button>
-          <button className={stockPage === "itens" ? "stock-nav active" : "stock-nav"} onClick={() => setStockPage("itens")}>Itens cadastrados</button>
-          <button className={stockPage === "lancamento" ? "stock-nav active" : "stock-nav"} onClick={() => setStockPage("lancamento")}>Lançamento de estoque</button>
-          <button className={stockPage === "estoque" ? "stock-nav active" : "stock-nav"} onClick={() => setStockPage("estoque")}>Estoque</button>
-          <button className={stockPage === "acompanhamento" ? "stock-nav active" : "stock-nav"} onClick={() => setStockPage("acompanhamento")}>Acompanhamento (dashboard)</button>
-        </aside>
+    const items = [
+      { id: "cadastro", label: "Cadastro" },
+      { id: "itens", label: "Itens cadastrados" },
+      { id: "lancamento", label: "Lançamento de estoque" },
+      { id: "estoque", label: "Estoque" },
+      { id: "acompanhamento", label: "Acompanhamento (dashboard)" }
+    ];
 
-        <main className="stock-main">
-          {stockPage === "cadastro" && renderStockCadastro()}
-          {stockPage === "itens" && renderStockItens()}
-          {stockPage === "lancamento" && renderStockLancamento()}
-          {stockPage === "estoque" && renderStockEstoque()}
-          {stockPage === "acompanhamento" && renderAcompanhamentoEstoque()}
-        </main>
-      </section>
+    return (
+      <OperationalModuleLayout items={items} page={stockPage} onNavigate={setStockPage}>
+        {stockPage === "cadastro" && renderStockCadastro()}
+        {stockPage === "itens" && renderStockItens()}
+        {stockPage === "lancamento" && renderStockLancamento()}
+        {stockPage === "estoque" && renderStockEstoque()}
+        {stockPage === "acompanhamento" && renderAcompanhamentoEstoque()}
+      </OperationalModuleLayout>
     );
   }
 
@@ -1526,28 +1577,24 @@ export default function App() {
   }
 
   function renderChecklistModule() {
-    return (
-      <section className="stock-workspace checklist-workspace">
-        <aside className="stock-sidebar">
-          <button className={checklistPage === "executar" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("executar")}>Executar checklist</button>
-          <button className={checklistPage === "kanban" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("kanban")}>Kanban</button>
-          {!isOperationalUser() && (
-            <>
-              <button className={checklistPage === "atividades" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("atividades")}>Atividades</button>
-              <button className={checklistPage === "historico" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("historico")}>Histórico</button>
-              <button className={checklistPage === "acompanhamento" ? "stock-nav active" : "stock-nav"} onClick={() => setChecklistPage("acompanhamento")}>Acompanhamento (dashboard)</button>
-            </>
-          )}
-        </aside>
+    const items = [
+      { id: "executar", label: "Executar checklist" },
+      { id: "kanban", label: "Kanban" },
+      ...(!isOperationalUser() ? [
+        { id: "atividades", label: "Atividades" },
+        { id: "historico", label: "Histórico" },
+        { id: "acompanhamento", label: "Acompanhamento (dashboard)" }
+      ] : [])
+    ];
 
-        <main className="stock-main">
-          {checklistPage === "executar" && renderChecklistExecucao()}
-          {checklistPage === "kanban" && renderKanbanModule()}
-          {!isOperationalUser() && checklistPage === "atividades" && renderChecklistAtividades()}
-          {!isOperationalUser() && checklistPage === "historico" && renderChecklistHistorico()}
-          {!isOperationalUser() && checklistPage === "acompanhamento" && renderAcompanhamentoChecklist()}
-        </main>
-      </section>
+    return (
+      <OperationalModuleLayout className="checklist-workspace" items={items} page={checklistPage} onNavigate={setChecklistPage}>
+        {checklistPage === "executar" && renderChecklistExecucao()}
+        {checklistPage === "kanban" && renderKanbanModule()}
+        {!isOperationalUser() && checklistPage === "atividades" && renderChecklistAtividades()}
+        {!isOperationalUser() && checklistPage === "historico" && renderChecklistHistorico()}
+        {!isOperationalUser() && checklistPage === "acompanhamento" && renderAcompanhamentoChecklist()}
+      </OperationalModuleLayout>
     );
   }
 
@@ -1562,7 +1609,7 @@ export default function App() {
   }
 
   function getCurrentClient() {
-    return getCurrentClientForUser(loggedUser, clients);
+    return getCurrentClientForUser(loggedUser, clients, viewedClientId);
   }
 
   function isOperationalUser() {
@@ -1941,80 +1988,23 @@ export default function App() {
   }
 
   function renderKanbanModule() {
-    const columns = ["Não iniciado", "Executando", "Pendência", "Concluído"];
-    const visibleActivities = checklistActivities.filter((activity) => {
-      if (isOperationalUser()) {
-        return activity.area === getUserOperationalArea();
-      }
-
-      return kanbanAreaFilter === "Todas" || activity.area === kanbanAreaFilter;
-    });
-
     return (
-      <section className="module-content checklist-wide">
-        <div className="kanban-header">
-          <div>
-            <h2>Kanban operacional</h2>
-            <p className="stock-help">Acompanhe as atividades por status. Nova atividade entra como Não iniciado; ao iniciar vai para Executando; ao registrar pendência vai para Pendência.</p>
-          </div>
-
-          {isOperationalUser() ? (
-            <div className="operational-scope-box compact">
-              <strong>Área</strong>
-              <span>{getUserOperationalArea() || "Não informada"}</span>
-            </div>
-          ) : (
-            <label>
-              Filtrar por área
-              <select value={kanbanAreaFilter} onChange={(event) => setKanbanAreaFilter(event.target.value)}>
-                <option>Todas</option>
-                {areas.map((area) => <option key={area}>{area}</option>)}
-              </select>
-            </label>
-          )}
-        </div>
-
-        <div className="kanban-board">
-          {columns.map((column) => {
-            const columnActivities = visibleActivities.filter((activity) => getKanbanColumn(activity) === column);
-
-            return (
-              <section className="kanban-column" key={column}>
-                <header>
-                  <strong>{column}</strong>
-                  <span>{columnActivities.length}</span>
-                </header>
-
-                <div className="kanban-list">
-                  {columnActivities.length === 0 ? (
-                    <div className="kanban-empty">Sem atividades</div>
-                  ) : (
-                    columnActivities.map((activity) => (
-                      <article className="kanban-card" key={activity.id}>
-                        <strong>{activity.name}</strong>
-                        <small>{activity.area || "Sem área"}</small>
-                        <small>{formatDate(activity.scheduledDate || today())} • {activity.startTime || "--"} às {activity.endTime || "--"}</small>
-                        <small>{activity.frequency || "--"}</small>
-                        {runningChecklist[activity.id] && <small>{checklistEvidence[activity.id]?.image ? "📷 Evidência anexada" : "📷 Evidência pendente"}</small>}
-                        {pendingChecklist[activity.id] && <small><strong>Motivo:</strong> {pendingChecklist[activity.id].reason}</small>}
-                      </article>
-                    ))
-                  )}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      </section>
+      <KanbanBoard
+        activities={checklistActivities}
+        areas={areas}
+        areaFilter={kanbanAreaFilter}
+        evidence={checklistEvidence}
+        getColumn={getKanbanColumn}
+        isOperational={isOperationalUser()}
+        operationalArea={getUserOperationalArea()}
+        pending={pendingChecklist}
+        running={runningChecklist}
+        onAreaFilterChange={setKanbanAreaFilter}
+      />
     );
   }
 
 
-
-  function qrPatternFromCode(code) {
-    const source = String(code || "ETQ").split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
-    return Array.from({ length: 49 }, (_, index) => ((index * 7 + source + index) % 5) < 2);
-  }
 
   function decrementStockByLabel(label) {
     let remaining = Number(label.quantity || 0);
@@ -2035,14 +2025,11 @@ export default function App() {
     return true;
   }
 
-  function getQrActionUrl(code) {
-    const baseUrl = window.location.origin + window.location.pathname;
-    return `${baseUrl}?etiqueta=${encodeURIComponent(code)}`;
-  }
-
   function openQrActionPage(code) {
     setQrActionCode(code);
     setLabelConsumeCode(code);
+    setQrActionArea(labelConsumeArea || loggedUser?.sector || "");
+    setQrActionOperator(labelConsumeOperator || loggedUser?.name || "");
     setPage("qr-action");
   }
 
@@ -2137,6 +2124,9 @@ export default function App() {
       return;
     }
 
+    if (!qrActionArea) return alert("Selecione a área responsável pela movimentação.");
+    if (!qrActionOperator) return alert("Selecione o responsável pela movimentação.");
+
     if (action === "descarte" && !qrDiscardReason.trim()) {
       return alert("Informe o motivo do descarte.");
     }
@@ -2181,21 +2171,6 @@ export default function App() {
     openQrActionPage(code);
   }
 
-
-  function discardLabel(labelId) {
-    const label = labelsHistory.find((item) => item.id === labelId);
-    if (!label) return;
-    if (label.status === "Consumido") return alert("Etiqueta consumida não pode ser descartada.");
-
-    const reason = window.prompt("Informe o motivo do descarte/perda:");
-    if (!reason || !reason.trim()) return;
-
-    setLabelsHistory(labelsHistory.map((item) =>
-      item.id === labelId
-        ? { ...item, status: "Descartado", discardReason: reason.trim(), discardedAt: new Date().toLocaleString("pt-BR"), discardedBy: loggedUser?.name || "Não informado" }
-        : item
-    ));
-  }
 
   function printLabels() {
     window.print();
@@ -2412,7 +2387,7 @@ export default function App() {
 
                       <div className="label-actions no-print">
                         {label.status === "Disponível" && <button className="secondary" onClick={() => openQrActionPage(label.code)}>Abrir QR</button>}
-                        {label.status === "Disponível" && <button className="danger" onClick={() => discardLabel(label.id)}>Descartar</button>}
+                        {label.status === "Disponível" && <button className="danger" onClick={() => openQrActionPage(label.code)}>Descartar</button>}
                         <button className="danger" onClick={() => deleteLabel(label.id)}>Excluir</button>
                       </div>
                     </article>
@@ -2426,27 +2401,45 @@ export default function App() {
     );
   }
 
+  function renderClientDashboard() {
+    const labelsDash = getLabelsDash();
+    const stockProducts = stockItemsView.filter((item) => item.type === "Produto" || item.type === "Item");
+    const expiredLots = stockLots.filter((lot) => Number(lot.quantity || 0) > 0 && diffDays(lot.expiryDate) < 0).length;
+    const completedToday = checklistHistory.filter((record) => record.date === today()).length;
+
+    return (
+      <ClientDashboard
+        client={getCurrentClient()}
+        metrics={{
+          emptyStock: stockProducts.filter((item) => item.totalStock <= 0).length,
+          expiredLots,
+          availableLabels: labelsDash.available,
+          consumedLabels: labelsDash.consumed,
+          discardedLabels: labelsDash.discarded,
+          openPending: Object.keys(pendingChecklist).length,
+          completedToday,
+          withEvidence: checklistHistory.filter((record) => record.evidenceImage).length
+        }}
+      />
+    );
+  }
+
   function renderAccessModule() {
     return (
-      <section className="stock-workspace access-workspace">
-        <aside className="stock-sidebar">
-          <button className="stock-nav active">Cadastros</button>
-        </aside>
+      <OperationalModuleLayout className="access-workspace" items={[{ id: "cadastros", label: "Cadastros" }]} page="cadastros" onNavigate={() => {}}>
+        <section className="module-content stock-wide">
+          <h2>Gestão de acesso</h2>
+          <p className="stock-help">Selecione se deseja cadastrar usuário ou processo/atividade.</p>
+          {renderAccessCadastroSelector()}
+        </section>
 
-        <main className="stock-main">
-          <section className="module-content stock-wide">
-            <h2>Gestão de acesso</h2>
-            <p className="stock-help">Selecione se deseja cadastrar usuário ou processo/atividade.</p>
-            {renderAccessCadastroSelector()}
-          </section>
+        <section className="module-content stock-wide">
+          {accessCadastroType === "usuario" && renderAccessUserForm()}
+          {accessCadastroType === "processo" && renderAccessProcessForm()}
+          {accessCadastroType === "area" && renderAccessAreaForm()}
+        </section>
 
-          <section className="module-content stock-wide">
-            {accessCadastroType === "usuario" && renderAccessUserForm()}
-            {accessCadastroType === "processo" && renderAccessProcessForm()}
-            {accessCadastroType === "area" && renderAccessAreaForm()}
-          </section>
-
-          {accessCadastroType === "usuario" && (
+        {accessCadastroType === "usuario" && (
             <section className="module-content stock-wide">
               <h2>Funcionários cadastrados</h2>
 
@@ -2495,11 +2488,10 @@ export default function App() {
                 </div>
               )}
             </section>
-          )}
+        )}
 
-          {accessCadastroType === "processo" && renderChecklistAtividades()}
-        </main>
-      </section>
+        {accessCadastroType === "processo" && renderChecklistAtividades()}
+      </OperationalModuleLayout>
     );
   }
 
@@ -2574,572 +2566,82 @@ export default function App() {
   }
 
   if (!isLogged) {
-    return (
-      <main className="login-page">
-        <section className="login-card">
-          <div className="logo-box">
-            <LogoGestaoMesa />
-          </div>
-
-          <h1>Gestão à Mesa</h1>
-          <p className="subtitle">Eficiência para restaurantes e bares</p>
-
-          <form className="login-form" onSubmit={handleLogin}>
-            <label>
-              E-mail
-              <input
-                type="email"
-                value={login.email}
-                onChange={(event) => setLogin({ ...login, email: event.target.value })}
-                placeholder="Digite seu e-mail"
-                required
-              />
-            </label>
-
-            <label>
-              Senha
-              <input
-                type="password"
-                value={login.password}
-                onChange={(event) => setLogin({ ...login, password: event.target.value })}
-                placeholder="Digite sua senha"
-                required
-              />
-            </label>
-
-            <button type="submit">Entrar</button>
-          </form>
-
-          <div className="login-hint">
-            <strong>Acesso inicial</strong>
-            <span>admin@gestaoamesa.com / 123456</span>
-            <span>admin@divino.com / 123456</span>
-          </div>
-        </section>
-      </main>
-    );
+    return <LoginPage login={login} onLoginChange={setLogin} onSubmit={handleLogin} />;
   }
 
   if (page === "qr-action") {
     return renderQrActionPage();
   }
 
-  if (["estoque", "etiquetas", "checklist", "acesso"].includes(page)) {
-    const moduleInfo = {
-      estoque: {
-        title: "Controle de estoque",
-        icon: "📦",
-        description: "Cadastro, lançamento e extrato dos itens de estoque.",
-        items: []
-      },
-      etiquetas: {
-        title: "Etiquetas",
-        icon: "🏷️",
-        description: "Aqui será construída a funcionalidade de etiquetas da versão 26.",
-        items: [
-          "Seleção de produto",
-          "Quantidade ou peso da etiqueta",
-          "Data de emissão",
-          "Data de validade",
-          "Impressão e histórico"
-        ]
-      },
-      checklist: {
-        title: "Checklist",
-        icon: "✅",
-        description: "Aqui será construída a funcionalidade de checklist da versão 26.",
-        items: [
-          "Cadastro de atividades",
-          "Atividades por setor",
-          "Botão iniciar",
-          "Botão finalizar",
-          "Tempo de execução e histórico"
-        ]
-      },
-      acesso: {
-        title: "Gestão de acesso",
-        icon: "👥",
-        description: "Cadastro de funcionários, perfis, setores, cargos, permissões e notificações.",
-        items: [
-          "Cadastro de funcionários",
-          "Perfis de acesso",
-          "Setor e cargo",
-          "Permissões por módulo",
-          "Notificação por Telegram"
-        ]
-      }
-    }[page];
-
-    if (!canAccessModule(page)) {
-      return (
-        <main className="module-full">
-          <header className="module-header">
-            <button className="module-back" onClick={() => setPage("hub")}>← Voltar ao Hub</button>
-          </header>
-          <section className="module-content">
-            <h2>Acesso não liberado</h2>
-            <p>Este módulo não está contratado para este cliente.</p>
-          </section>
-        </main>
-      );
-    }
+  if (["acompanhamento", "estoque", "etiquetas", "checklist", "acesso"].includes(page)) {
+    const moduleInfo = MODULE_INFO[page];
 
     return (
-      <main className="module-full">
-        <header className="module-header">
-          <button className="module-back" onClick={() => setPage("hub")}>← Voltar ao Hub</button>
-        </header>
-
-        <section className="module-hero">
-          <span className="module-icon">{moduleInfo.icon}</span>
-          <div>
-            <h1>{moduleInfo.title}</h1>
-            <p>{moduleInfo.description}</p>
-          </div>
-        </section>
-
+      <ModuleShell moduleInfo={moduleInfo} canAccess={canAccessModule(page)} onBack={() => setPage("hub")}>
         {page === "estoque" && renderStockModule()}
         {page === "checklist" && renderChecklistModule()}
         {page === "etiquetas" && renderEtiquetasModule()}
-
+        {page === "acompanhamento" && renderClientDashboard()}
         {page === "acesso" && renderAccessModule()}
-      </main>
+      </ModuleShell>
     );
   }
 
   return (
-    <div className="work-page">
-      <aside className="sidebar">
-        {loggedUser?.userType === "platform" && (
-          <>
-            <button className={page === "dashboard" ? "nav active" : "nav"} onClick={() => setPage("dashboard")}>
-              Dashboard
-            </button>
-
-            <button className={page === "clients" ? "nav active" : "nav"} onClick={() => setPage("clients")}>
-              Gestão de cliente
-            </button>
-
-            <button className={page === "view" ? "nav active" : "nav"} onClick={() => setPage("view")}>
-              Visualizar cliente
-            </button>
-          </>
-        )}
-
-        <button className={page === "hub" ? "nav active" : "nav"} onClick={() => setPage("hub")}>
-          Hub de soluções
-        </button>
-
-        {loggedUser?.userType === "platform" && (
-          <button className={page === "users" ? "nav active" : "nav"} onClick={() => setPage("users")}>
-            Cadastrar usuários
-          </button>
-        )}
-      </aside>
-
-      <main className="main">
-        <header className="topbar">
-          <div className="topbar-left">
-            <LogoGestaoMesa small />
-            <div>
-              <h1>{loggedUser?.userType === "client" ? "Hub de soluções" : "Gestão de Clientes"}</h1>
-              <p>{loggedUser?.userType === "client" ? "Escolha uma funcionalidade contratada" : "Administração dos clientes contratantes"}</p>
-            </div>
-          </div>
-
-          <div className="topbar-actions">
-            <span>Olá, {loggedUser?.name}</span>
-            <button className="logout" onClick={logout}>Sair</button>
-          </div>
-        </header>
+    <AppShell loggedUser={loggedUser} page={page} onNavigate={setPage} onLogout={logout}>
 
         {page === "dashboard" && (
-          <section className="content">
-            <div className="metrics">
-              <div className="metric">
-                <span>Clientes cadastrados</span>
-                <strong>{clients.length}</strong>
-              </div>
-
-              <div className="metric">
-                <span>Clientes ativos</span>
-                <strong>{clients.filter((client) => client.status === "Ativo").length}</strong>
-              </div>
-
-              <div className="metric warning">
-                <span>Faturamento do mês</span>
-                <strong>{money(monthlyRevenue)}</strong>
-              </div>
-
-              <div className="metric warning">
-                <span>Usuários cadastrados</span>
-                <strong>{users.length}</strong>
-              </div>
-            </div>
-
-            <section className="panel">
-              <h2>Clientes recentes</h2>
-
-              {clients.length === 0 ? (
-                <div className="empty">
-                  Nenhum cliente cadastrado ainda. Comece pelo menu <strong>Gestão de cliente</strong>.
-                </div>
-              ) : (
-                <div className="client-grid">
-                  {clients.slice(0, 4).map((client) => (
-                    <article className="client-card" key={client.id}>
-                      <div className="client-logo">
-                        {client.logo ? <img src={client.logo} alt={client.fantasyName} /> : <span>{client.fantasyName.slice(0, 2).toUpperCase()}</span>}
-                      </div>
-                      <div>
-                        <strong>{client.fantasyName}</strong>
-                        <small>{client.companyName}</small>
-                        <small>{client.status}</small>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-          </section>
+          <PlatformDashboard
+            clients={clients}
+            monthlyRevenue={monthlyRevenue}
+            outstandingRevenue={outstandingRevenue}
+            onOpenClient={openClientWorkspace}
+          />
         )}
 
         {page === "clients" && (
-          <section className="content">
-            <section className="panel compact-panel">
-              <div className="panel-title-row">
-                <h2>Gestão de cliente</h2>
-                <button className="primary compact" onClick={openNewClientForm}>
-                  + Cadastrar cliente
-                </button>
-              </div>
-
-              {!showClientForm && (
-                <div className="empty">
-                  Clique em <strong>Cadastrar cliente</strong> para abrir os dados cadastrais.
-                </div>
-              )}
-
-              {showClientForm && (
-                <>
-                  <div className="panel-title-row form-title">
-                    <h3>{editingClientId ? "Editar cliente contratante" : "Dados cadastrais do cliente"}</h3>
-                    <button className="secondary" onClick={resetClientForm}>Fechar</button>
-                  </div>
-
-                  <form className="form-grid dense-form" onSubmit={saveClient}>
-                    <label>
-                      Razão social / Empresa contratante
-                      <input value={clientForm.companyName} onChange={(event) => setClientForm({ ...clientForm, companyName: event.target.value })} placeholder="Ex: Divino Botequim LTDA" />
-                    </label>
-
-                    <label>
-                      Nome fantasia
-                      <input value={clientForm.fantasyName} onChange={(event) => setClientForm({ ...clientForm, fantasyName: event.target.value })} placeholder="Ex: Divino Botequim" />
-                    </label>
-
-                    <label>
-                      CNPJ / Documento
-                      <input value={clientForm.document} onChange={(event) => setClientForm({ ...clientForm, document: event.target.value })} placeholder="00.000.000/0001-00" />
-                    </label>
-
-                    <label>
-                      Telefone
-                      <input value={clientForm.phone} onChange={(event) => setClientForm({ ...clientForm, phone: event.target.value })} placeholder="(00) 00000-0000" />
-                    </label>
-
-                    <label>
-                      E-mail
-                      <input type="email" value={clientForm.email} onChange={(event) => setClientForm({ ...clientForm, email: event.target.value })} placeholder="contato@empresa.com" />
-                    </label>
-
-                    <label>
-                      Endereço
-                      <input value={clientForm.address} onChange={(event) => setClientForm({ ...clientForm, address: event.target.value })} placeholder="Rua, número, cidade" />
-                    </label>
-
-                    <label>
-                      Forma de pagamento
-                      <select value={clientForm.paymentMethod} onChange={(event) => setClientForm({ ...clientForm, paymentMethod: event.target.value })}>
-                        <option>Pix</option>
-                        <option>Boleto</option>
-                        <option>Cartão de crédito</option>
-                        <option>Transferência</option>
-                      </select>
-                    </label>
-
-                    <label>
-                      Mensalidade
-                      <input type="number" value={clientForm.monthlyFee} onChange={(event) => setClientForm({ ...clientForm, monthlyFee: event.target.value })} placeholder="199" />
-                    </label>
-
-                    <label>
-                      Dia de vencimento
-                      <input type="number" min="1" max="31" value={clientForm.dueDay} onChange={(event) => setClientForm({ ...clientForm, dueDay: event.target.value })} />
-                    </label>
-
-                    <label>
-                      Logomarca
-                      <input type="file" accept="image/*" onChange={handleLogoUpload} />
-                    </label>
-
-                    {clientForm.logo && (
-                      <div className="logo-preview">
-                        <img src={clientForm.logo} alt="Prévia da logo" />
-                      </div>
-                    )}
-
-                    <div className="client-modules-box">
-                      <strong>Funcionalidades liberadas no Hub</strong>
-                      <small>Selecione quais módulos a empresa contratante terá acesso.</small>
-
-                      <div className="client-modules-grid">
-                        {SOLUTION_MODULES.map((module) => (
-                          <button
-                            type="button"
-                            key={module.id}
-                            className={(clientForm.enabledModules || []).includes(module.id) ? "client-module-option active" : "client-module-option"}
-                            onClick={() => toggleClientModule(module.id)}
-                          >
-                            <span>{module.icon}</span>
-                            <strong>{module.title}</strong>
-                            <small>{module.description}</small>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <button className="primary" type="submit">
-                      {editingClientId ? "Salvar alterações" : "Salvar cliente"}
-                    </button>
-                  </form>
-                </>
-              )}
-            </section>
-
-            <section className="panel compact-panel">
-              <h2>Clientes cadastrados</h2>
-
-              {clients.length === 0 ? (
-                <div className="empty">Nenhum cliente cadastrado.</div>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Logo</th>
-                        <th>Cliente</th>
-                        <th>Documento</th>
-                        <th>Pagamento</th>
-                        <th>Mensalidade</th>
-                        <th>Vencimento</th>
-                        <th>Status</th>
-                        <th>Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {clients.map((client) => (
-                        <tr key={client.id}>
-                          <td>
-                            <div className="table-logo">
-                              {client.logo ? <img src={client.logo} alt={client.fantasyName} /> : <span>{client.fantasyName.slice(0, 2).toUpperCase()}</span>}
-                            </div>
-                          </td>
-                          <td>
-                            <strong>{client.fantasyName}</strong>
-                            <small>{client.companyName}</small>
-                          </td>
-                          <td>{client.document || "--"}</td>
-                          <td>{client.paymentMethod}</td>
-                          <td>{money(client.monthlyFee)}</td>
-                          <td>Dia {client.dueDay}</td>
-                          <td><span className="status">{client.status}</span></td>
-                          <td>
-                            <div className="actions">
-                              <button className="secondary" onClick={() => editClient(client)}>Editar</button>
-                              <button className="danger" onClick={() => deleteClient(client.id)}>Excluir</button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          </section>
+          <ClientManagementPage
+            clients={clients}
+            clientForm={clientForm}
+            editingClientId={editingClientId}
+            modules={SOLUTION_MODULES}
+            showClientForm={showClientForm}
+            onClientFormChange={setClientForm}
+            onCloseForm={resetClientForm}
+            onDelete={deleteClient}
+            onEdit={editClient}
+            onLogoUpload={handleLogoUpload}
+            onOpenClient={openClientWorkspace}
+            onOpenNew={openNewClientForm}
+            onSave={saveClient}
+            onToggleModule={toggleClientModule}
+            onToggleStatus={toggleClientStatus}
+          />
         )}
 
         {page === "view" && (
-          <section className="content">
-            <section className="panel compact-panel">
-              <h2>Visualizar clientes</h2>
-
-              {clients.length === 0 ? (
-                <div className="empty">Nenhum cliente cadastrado.</div>
-              ) : (
-                <div className="client-card-grid">
-                  {clients.map((client) => (
-                    <article className="visual-client-card" key={client.id}>
-                      <div className="visual-client-logo">
-                        {client.logo ? <img src={client.logo} alt={client.fantasyName} /> : <span>{client.fantasyName.slice(0, 2).toUpperCase()}</span>}
-                      </div>
-
-                      <div className="visual-client-body">
-                        <strong>{client.fantasyName}</strong>
-                        <small>{client.companyName}</small>
-                        <small>{client.document || "Documento não informado"}</small>
-                        <div className="contracted-modules-list">
-                          <strong>Módulos contratados:</strong>
-                          {(client.enabledModules || []).length === 0 ? (
-                            <small>Nenhum módulo contratado</small>
-                          ) : (
-                            (client.enabledModules || []).map((moduleId) => {
-                              const module = SOLUTION_MODULES.find((item) => item.id === moduleId);
-                              return module ? <small key={module.id}>{module.title}</small> : null;
-                            })
-                          )}
-                        </div>
-                        <div className="visual-client-footer">
-                          <span>{client.status}</span>
-                          <button className="secondary" onClick={() => editClient(client)}>Editar</button>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-          </section>
+          <ClientCardsPage clients={clients} modules={SOLUTION_MODULES} onEdit={editClient} onOpenClient={openClientWorkspace} />
         )}
 
         {page === "hub" && (
-          <section className="content">
-            <section className="panel compact-panel">
-              <h2>Hub de soluções</h2>
-              <p className="hub-description">
-                Escolha uma funcionalidade para abrir o módulo em tela separada.
-              </p>
-
-              <div className="solution-grid">
-                {getAllowedModules().map((module) => (
-                  <button className="solution-card" key={module.id} onClick={() => openModuleFromHub(module.id)}>
-                    <span>{module.icon}</span>
-                    <strong>{module.title}</strong>
-                    <small>{module.description}</small>
-                  </button>
-                ))}
-              </div>
-
-              {getAllowedModules().length === 0 && (
-                <div className="empty">
-                  Nenhuma funcionalidade foi liberada para este cliente.
-                </div>
-              )}
-            </section>
-          </section>
+          <HubPage client={getCurrentClient()} modules={getAllowedModules()} onOpenModule={openModuleFromHub} />
         )}
 
         {page === "users" && (
-          <section className="content">
-            <section className="panel compact-panel">
-              <div className="panel-title-row">
-                <h2>{editingUserId ? "Editar usuário" : "Cadastrar usuário"}</h2>
-                {editingUserId && (
-                  <button
-                    className="secondary"
-                    onClick={() => {
-                      setEditingUserId(null);
-                      setUserForm({ name: "", email: "", password: "", profile: "Administrador", status: "Ativo" });
-                    }}
-                  >
-                    Cancelar edição
-                  </button>
-                )}
-              </div>
-
-              <form className="form-grid dense-form" onSubmit={saveUser}>
-                <label>
-                  Nome
-                  <input value={userForm.name} onChange={(event) => setUserForm({ ...userForm, name: event.target.value })} placeholder="Nome do usuário" />
-                </label>
-
-                <label>
-                  E-mail
-                  <input type="email" value={userForm.email} onChange={(event) => setUserForm({ ...userForm, email: event.target.value })} placeholder="usuario@empresa.com" />
-                </label>
-
-                <label>
-                  Senha
-                  <input type="password" value={userForm.password} onChange={(event) => setUserForm({ ...userForm, password: event.target.value })} placeholder="Senha de acesso" />
-                </label>
-
-                <label>
-                  Perfil
-                  <select value={userForm.profile} onChange={(event) => setUserForm({ ...userForm, profile: event.target.value })}>
-                    <option>Administrador</option>
-                    <option>Gerente</option>
-                    <option>Supervisor</option>
-                    <option>Operador</option>
-                  </select>
-                </label>
-
-                <label>
-                  Status
-                  <select value={userForm.status} onChange={(event) => setUserForm({ ...userForm, status: event.target.value })}>
-                    <option>Ativo</option>
-                    <option>Inativo</option>
-                  </select>
-                </label>
-
-                <button className="primary" type="submit">
-                  {editingUserId ? "Salvar alterações" : "Salvar usuário"}
-                </button>
-              </form>
-            </section>
-
-            <section className="panel compact-panel">
-              <h2>Usuários cadastrados</h2>
-
-              {users.length === 0 ? (
-                <div className="empty">Nenhum usuário cadastrado.</div>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Nome</th>
-                        <th>E-mail</th>
-                        <th>Perfil</th>
-                        <th>Status</th>
-                        <th>Criado em</th>
-                        <th>Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {users.map((user) => (
-                        <tr key={user.id}>
-                          <td><strong>{user.name}</strong></td>
-                          <td>{user.email}</td>
-                          <td>{user.profile}</td>
-                          <td><span className="status">{user.status}</span></td>
-                          <td>{user.createdAt || "--"}</td>
-                          <td>
-                            <div className="actions">
-                              <button className="secondary" onClick={() => editUser(user)}>Editar</button>
-                              <button className="danger" onClick={() => deleteUser(user.id)}>Excluir</button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          </section>
+          <PlatformUsersPage
+            editingUserId={editingUserId}
+            userForm={userForm}
+            users={users}
+            onCancelEdit={() => {
+              setEditingUserId(null);
+              setUserForm(emptyUserForm);
+            }}
+            onDelete={deleteUser}
+            onEdit={editUser}
+            onSave={saveUser}
+            onUserFormChange={setUserForm}
+          />
         )}
-      </main>
-    </div>
+    </AppShell>
   );
 }

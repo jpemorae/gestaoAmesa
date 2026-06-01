@@ -1,13 +1,13 @@
-const OPERATION_PROFILES = ["Operação", "Operacao", "Operador", "OperaÃ§Ã£o"];
+const OPERATION_PROFILES = ["Operação", "Operacao", "Operador"];
 const CLIENT_ADMIN_PROFILES = ["Administrador"];
 const CLIENT_MANAGER_PROFILES = ["Gestor", "Gerente", "Supervisor"];
 
-export function getCurrentClientForUser(user, clients) {
+export function getCurrentClientForUser(user, clients, viewedClientId = null) {
   if (user?.userType === "client") {
     return clients.find((client) => client.id === user.companyId) || null;
   }
 
-  return clients[0] || null;
+  return clients.find((client) => client.id === viewedClientId) || clients[0] || null;
 }
 
 export function isOperationalUser(user) {

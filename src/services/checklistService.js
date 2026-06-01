@@ -1,18 +1,23 @@
 import { createLocalService } from "./localStore";
+import { tenantKey } from "./tenantStorage";
 
-const activities = createLocalService("gestao_mesa_checklist_activities");
-const executions = createLocalService("gestao_mesa_checklist_executions");
+const activities = (companyId) => createLocalService(tenantKey("gestao_mesa_checklist_activities", companyId));
+const executions = (companyId) => createLocalService(tenantKey("gestao_mesa_checklist_executions", companyId));
 
-export function listActivities() {
-  return activities.list();
+export function listActivities(companyId) {
+  return activities(companyId).list();
 }
 
-export function createActivity(payload) {
-  return activities.create(payload);
+export function listChecklistExecutions(companyId) {
+  return executions(companyId).list();
 }
 
-export function startChecklist(activityId, payload = {}) {
-  return executions.create({
+export function createActivity(companyId, payload) {
+  return activities(companyId).create(payload);
+}
+
+export function startChecklist(companyId, activityId, payload = {}) {
+  return executions(companyId).create({
     activityId,
     status: "Executando",
     startedAt: new Date().toISOString(),
@@ -20,16 +25,16 @@ export function startChecklist(activityId, payload = {}) {
   });
 }
 
-export function markPending(executionId, pendingReason) {
-  return executions.update(executionId, {
+export function markPending(companyId, executionId, pendingReason) {
+  return executions(companyId).update(executionId, {
     status: "Pendência",
     pendingReason,
     pausedAt: new Date().toISOString()
   });
 }
 
-export function finishChecklist(executionId, payload = {}) {
-  return executions.update(executionId, {
+export function finishChecklist(companyId, executionId, payload = {}) {
+  return executions(companyId).update(executionId, {
     ...payload,
     status: "Concluído",
     finishedAt: new Date().toISOString()

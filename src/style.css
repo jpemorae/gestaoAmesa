@@ -479,6 +479,29 @@ td {
   font-weight: 900;
 }
 
+.status.attention {
+  background: #fff3cd;
+  color: #8a5a00;
+}
+
+.status.inactive {
+  background: #f0f0f0;
+  color: #666;
+}
+
+.client-card-button {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.client-card-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(17, 24, 39, 0.1);
+}
+
 .actions {
   display: flex;
   gap: 7px;

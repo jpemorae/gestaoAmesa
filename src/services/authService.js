@@ -5,17 +5,18 @@ export function getInitialPageForUser(user) {
   return user.userType === "client" ? "hub" : "dashboard";
 }
 
-export function authenticateUser({ email, password }, users = initialUsers) {
+export function authenticateUser({ email, password }, users = initialUsers, clients = []) {
   const normalizedEmail = email.trim().toLowerCase();
 
-  return (
-    users.find(
+  const user = users.find(
       (user) =>
         user.email.toLowerCase() === normalizedEmail &&
         user.password === password &&
         user.status === "Ativo"
-    ) || null
-  );
+    ) || null;
+
+  if (!user || user.userType !== "client") return user;
+  return clients.some((client) => client.id === user.companyId && client.status === "Ativo") ? user : null;
 }
 
 export function restoreSession() {

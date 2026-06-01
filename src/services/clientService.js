@@ -15,6 +15,10 @@ export function updateClient(id, payload) {
   return clients.update(id, payload);
 }
 
+export function deactivateClient(id) {
+  return clients.update(id, { status: "Inativo" });
+}
+
 export function deleteClient(id) {
   return clients.remove(id);
 }
