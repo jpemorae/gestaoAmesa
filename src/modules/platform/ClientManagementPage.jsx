@@ -10,6 +10,7 @@ export function ClientManagementPage({
   onCloseForm,
   onDelete,
   onEdit,
+  onLogoRemove,
   onLogoUpload,
   onOpenClient,
   onOpenNew,
@@ -58,12 +59,21 @@ export function ClientManagementPage({
                 <input type="color" value={clientForm.themeColor} onChange={(event) => onClientFormChange({ ...clientForm, themeColor: event.target.value })} />
               </label>
 
-              <label>
-                Logomarca
-                <input type="file" accept="image/*" onChange={onLogoUpload} />
-              </label>
+              <div className="logo-upload-field">
+                <span>Logomarca</span>
+                <label className="logo-upload-drop">
+                  <input type="file" accept="image/*" onChange={onLogoUpload} />
+                  <strong>Fazer upload da logo</strong>
+                  <small>PNG, JPG ou WEBP</small>
+                </label>
+              </div>
 
-              {clientForm.logo && <div className="logo-preview"><img src={clientForm.logo} alt="Prévia da logo" /></div>}
+              {clientForm.logo && (
+                <div className="logo-preview">
+                  <img src={clientForm.logo} alt="Prévia da logo" />
+                  <button type="button" className="secondary" onClick={onLogoRemove}>Remover logo</button>
+                </div>
+              )}
 
               <div className="client-modules-box">
                 <strong>Funcionalidades liberadas no Hub</strong>

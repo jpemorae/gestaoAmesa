@@ -256,11 +256,22 @@ export default function App() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (!file.type.startsWith("image/")) {
+      alert("Envie um arquivo de imagem para a logo.");
+      event.target.value = "";
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
-      setClientForm({ ...clientForm, logo: reader.result });
+      setClientForm((currentForm) => ({ ...currentForm, logo: reader.result }));
     };
     reader.readAsDataURL(file);
+    event.target.value = "";
+  }
+
+  function removeClientLogo() {
+    setClientForm((currentForm) => ({ ...currentForm, logo: "" }));
   }
 
   function resetClientForm() {
@@ -1995,6 +2006,7 @@ export default function App() {
         areaFilter={kanbanAreaFilter}
         evidence={checklistEvidence}
         getColumn={getKanbanColumn}
+        history={checklistHistory}
         isOperational={isOperationalUser()}
         operationalArea={getUserOperationalArea()}
         pending={pendingChecklist}
@@ -2611,6 +2623,7 @@ export default function App() {
             onDelete={deleteClient}
             onEdit={editClient}
             onLogoUpload={handleLogoUpload}
+            onLogoRemove={removeClientLogo}
             onOpenClient={openClientWorkspace}
             onOpenNew={openNewClientForm}
             onSave={saveClient}
