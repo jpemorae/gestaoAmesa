@@ -1006,9 +1006,14 @@ td {
 
 .stock-filter-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 2fr) repeat(5, minmax(140px, 1fr));
+  grid-template-columns: minmax(220px, 2fr) repeat(auto-fit, minmax(135px, 1fr));
   gap: 10px;
   align-items: center;
+}
+
+.stock-filter-grid input,
+.stock-filter-grid select {
+  min-width: 0;
 }
 
 .stock-quick-filters {
@@ -1192,6 +1197,7 @@ td {
 
 .stock-alert-label input {
   width: 76px;
+  flex: 0 0 76px;
 }
 
 .stock-type-badge {
@@ -1234,12 +1240,13 @@ td {
   }
 
   .stock-alert-label {
-    align-items: stretch;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 
   .stock-alert-label input {
-    width: 100%;
+    width: 76px;
   }
 }
 
