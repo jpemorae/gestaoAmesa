@@ -37,11 +37,6 @@ export function LoginPage({ login, onLoginChange, onSubmit }) {
           <button type="submit">Entrar</button>
         </form>
 
-        <div className="login-hint">
-          <strong>Acesso inicial</strong>
-          <span>admin@gestaoamesa.com / 123456</span>
-          <span>admin@divino.com / 123456</span>
-        </div>
       </section>
     </main>
   );
