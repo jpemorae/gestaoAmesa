@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   appLogin,
+  appDataDiagnostics,
   deleteAppClient,
   deleteAppUser,
   listAppData,
@@ -13,6 +14,7 @@ import {
 const router = Router();
 
 router.get("/", listAppData);
+router.get("/diagnostics", appDataDiagnostics);
 router.post("/login", appLogin);
 router.post("/clients", upsertAppClient);
 router.put("/clients/:id", updateAppClient);

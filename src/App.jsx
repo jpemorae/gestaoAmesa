@@ -134,7 +134,7 @@ export default function App() {
       .then(async (data) => {
         if (!active || !data) return;
         if (data.setupRequired) {
-          console.warn(data.message || "Persistencia global ainda nao configurada na API.");
+          console.warn(data.message || "Persistencia global ainda nao configurada na API.", data.diagnostics || "");
           return;
         }
         const remoteClients = Array.isArray(data.clients) ? data.clients : [];

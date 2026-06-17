@@ -85,21 +85,36 @@ function isMissingAppDataTable(error) {
   return message.includes("app_clients") || message.includes("app_users") || message.includes("does not exist");
 }
 
+function appDataSetupResponse(message, error = null, extra = {}) {
+  return {
+    clients: [],
+    users: [],
+    setupRequired: true,
+    message,
+    diagnostics: error
+      ? {
+          code: error.code || null,
+          message: error.message || String(error),
+          details: error.details || null,
+          hint: error.hint || null
+        }
+      : null,
+    ...extra
+  };
+}
+
 export async function listAppData(req, res) {
   const { data: clients, error: clientsError } = await supabaseAdmin
     .from("app_clients")
     .select("*")
     .order("created_at", { ascending: false });
   if (clientsError) {
-    if (isMissingAppDataTable(clientsError)) {
-      return res.json({
-        clients: [],
-        users: [],
-        setupRequired: true,
-        message: "Tabelas app_clients/app_users ainda nao existem no banco conectado a API."
-      });
-    }
-    return res.status(400).json({ error: clientsError.message });
+    return res.json(appDataSetupResponse(
+      isMissingAppDataTable(clientsError)
+        ? "Tabelas app_clients/app_users ainda nao existem no banco conectado a API."
+        : "Nao foi possivel consultar app_clients no banco conectado a API.",
+      clientsError
+    ));
   }
 
   const { data: users, error: usersError } = await supabaseAdmin
@@ -107,15 +122,13 @@ export async function listAppData(req, res) {
     .select("*")
     .order("created_at", { ascending: false });
   if (usersError) {
-    if (isMissingAppDataTable(usersError)) {
-      return res.json({
-        clients: (clients || []).map(clientFromRow),
-        users: [],
-        setupRequired: true,
-        message: "Tabela app_users ainda nao existe no banco conectado a API."
-      });
-    }
-    return res.status(400).json({ error: usersError.message });
+    return res.json(appDataSetupResponse(
+      isMissingAppDataTable(usersError)
+        ? "Tabela app_users ainda nao existe no banco conectado a API."
+        : "Nao foi possivel consultar app_users no banco conectado a API.",
+      usersError,
+      { clients: (clients || []).map(clientFromRow) }
+    ));
   }
 
   return res.json({
@@ -135,10 +148,18 @@ export async function appLogin(req, res) {
     .maybeSingle();
 
   if (error) {
-    if (isMissingAppDataTable(error)) {
-      return res.status(503).json({ error: "Tabelas app_clients/app_users ainda nao existem no banco conectado a API." });
-    }
-    return res.status(400).json({ error: error.message });
+    return res.status(503).json({
+      error: isMissingAppDataTable(error)
+        ? "Tabelas app_clients/app_users ainda nao existem no banco conectado a API."
+        : "Nao foi possivel consultar app_users no banco conectado a API.",
+      setupRequired: true,
+      diagnostics: {
+        code: error.code || null,
+        message: error.message || String(error),
+        details: error.details || null,
+        hint: error.hint || null
+      }
+    });
   }
   if (!user || !verifyPassword(password, user)) {
     return res.status(401).json({ error: "Usuário ou senha inválidos." });
@@ -155,6 +176,31 @@ export async function appLogin(req, res) {
   }
 
   return res.json({ user: userFromRow(user) });
+}
+
+export async function appDataDiagnostics(req, res) {
+  const checks = {};
+
+  const { data: clients, error: clientsError } = await supabaseAdmin
+    .from("app_clients")
+    .select("id")
+    .limit(1);
+  checks.app_clients = clientsError
+    ? { ok: false, code: clientsError.code || null, message: clientsError.message, details: clientsError.details || null, hint: clientsError.hint || null }
+    : { ok: true, sampleCount: clients?.length || 0 };
+
+  const { data: users, error: usersError } = await supabaseAdmin
+    .from("app_users")
+    .select("id")
+    .limit(1);
+  checks.app_users = usersError
+    ? { ok: false, code: usersError.code || null, message: usersError.message, details: usersError.details || null, hint: usersError.hint || null }
+    : { ok: true, sampleCount: users?.length || 0 };
+
+  return res.json({
+    ok: Object.values(checks).every((check) => check.ok),
+    checks
+  });
 }
 
 export async function upsertAppClient(req, res) {
