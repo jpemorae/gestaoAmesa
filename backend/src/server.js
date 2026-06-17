@@ -11,14 +11,27 @@ import stockRoutes from "./routes/stock.routes.js";
 import labelRoutes from "./routes/label.routes.js";
 import checklistRoutes from "./routes/checklist.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
+import { isAllowedOrigin } from "./config/security.js";
 import { errorHandler, notFound } from "./middleware/error.js";
 
 dotenv.config();
 
 const app = express();
 
+const corsOptions = {
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) return callback(null, true);
+    return callback(new Error("Origem nao permitida pelo CORS."));
+  },
+  credentials: true,
+  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Company-Id"],
+  maxAge: 86400
+};
+
 app.use(helmet());
-app.use(cors({ origin: process.env.FRONTEND_URL || "*", credentials: true }));
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(morgan("dev"));
 
