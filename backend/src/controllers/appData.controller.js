@@ -219,8 +219,7 @@ export async function updateAppClient(req, res) {
   const payload = clientPayload({ ...req.body, id: req.params.id });
   const { data, error } = await supabaseAdmin
     .from("app_clients")
-    .update(payload)
-    .eq("id", req.params.id)
+    .upsert(payload)
     .select()
     .single();
 
@@ -260,19 +259,19 @@ export async function updateAppUser(req, res) {
     .from("app_users")
     .select("*")
     .eq("id", req.params.id)
-    .single();
-  if (existingError) return res.status(404).json({ error: "Usuário não encontrado." });
+    .maybeSingle();
+  if (existingError) return res.status(400).json({ error: existingError.message });
 
   const payload = userPayload({ ...req.body, id: req.params.id }, existing);
   if (!payload.password_hash) {
+    if (!existing) return res.status(400).json({ error: "Senha obrigatória para novo usuário." });
     payload.password_hash = existing.password_hash;
     payload.password_salt = existing.password_salt;
   }
 
   const { data, error } = await supabaseAdmin
     .from("app_users")
-    .update(payload)
-    .eq("id", req.params.id)
+    .upsert(payload)
     .select()
     .single();
 
