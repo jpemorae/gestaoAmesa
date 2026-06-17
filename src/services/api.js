@@ -1,5 +1,9 @@
 const API_URL = import.meta.env.VITE_API_URL;
 
+export function isApiConfigured() {
+  return Boolean(API_URL);
+}
+
 export async function apiFetch(path, options = {}) {
   if (!API_URL) {
     throw new Error("VITE_API_URL não configurada. Usando services locais enquanto a API não estiver ativa.");

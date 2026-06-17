@@ -4,6 +4,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import dotenv from "dotenv";
 import authRoutes from "./routes/auth.routes.js";
+import appDataRoutes from "./routes/appData.routes.js";
 import companyRoutes from "./routes/company.routes.js";
 import accessRoutes from "./routes/access.routes.js";
 import stockRoutes from "./routes/stock.routes.js";
@@ -32,6 +33,7 @@ app.get("/health", (req, res) => {
 app.get("/", (req, res) => res.json({ name: "Gestão à Mesa API", status: "online" }));
 
 app.use("/auth", authRoutes);
+app.use("/app-data", appDataRoutes);
 app.use("/companies", companyRoutes);
 app.use("/access", accessRoutes);
 app.use("/stock", stockRoutes);

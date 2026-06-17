@@ -20,6 +20,15 @@ import {
   restoreSession
 } from "./services/authService";
 import {
+  canUseAppDataApi,
+  loadAppData,
+  loginAppUser,
+  removeAppClient,
+  removeAppUser,
+  saveAppClient,
+  saveAppUser
+} from "./services/appDataService";
+import {
   addDaysFromDate,
   currentTimeHHMM,
   diffDays,
@@ -116,6 +125,59 @@ export default function App() {
 
   const [clientForm, setClientForm] = useState(emptyClientForm);
   const [userForm, setUserForm] = useState(emptyUserForm);
+
+  useEffect(() => {
+    if (!canUseAppDataApi()) return;
+
+    let active = true;
+    loadAppData()
+      .then(async (data) => {
+        if (!active || !data) return;
+        const remoteClients = Array.isArray(data.clients) ? data.clients : [];
+        const remoteUsers = Array.isArray(data.users) ? data.users : [];
+        const missingClients = clients.filter((client) => !remoteClients.some((remoteClient) => remoteClient.id === client.id));
+        const missingUsers = users.filter((user) => !remoteUsers.some((remoteUser) => remoteUser.id === user.id));
+
+        const syncedClients = [];
+        for (const client of missingClients) {
+          try {
+            syncedClients.push(await saveAppClient(client));
+          } catch (error) {
+            console.warn(`Falha ao sincronizar cliente ${client.fantasyName}:`, error.message);
+          }
+        }
+
+        const syncedUsers = [];
+        for (const user of missingUsers) {
+          if (!user.password) continue;
+          try {
+            syncedUsers.push(await saveAppUser(user));
+          } catch (error) {
+            console.warn(`Falha ao sincronizar usuário ${user.email}:`, error.message);
+          }
+        }
+
+        const nextClients = [...remoteClients, ...syncedClients];
+        const nextUsers = [...remoteUsers, ...syncedUsers];
+
+        if (nextClients.length > 0) {
+          setClients(nextClients);
+          if (!nextClients.some((client) => client.id === viewedClientId)) {
+            setViewedClientId(nextClients[0]?.id || "");
+          }
+        }
+        if (nextUsers.length > 0) {
+          setUsers(nextUsers);
+        }
+      })
+      .catch((error) => {
+        console.warn("Falha ao carregar dados globais da API:", error.message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [stockPage, setStockPage] = useState("cadastro");
   const legacyCompanyId = initialClients[0]?.id;
@@ -301,10 +363,23 @@ export default function App() {
     setPage("qr-action");
   }, [isLogged]);
 
-  function handleLogin(event) {
+  async function handleLogin(event) {
     event.preventDefault();
 
-    const user = authenticateUser(login, users, clients);
+    let user = null;
+
+    if (canUseAppDataApi()) {
+      try {
+        const data = await loginAppUser(login);
+        user = data?.user || null;
+      } catch {
+        user = null;
+      }
+    }
+
+    if (!user) {
+      user = authenticateUser(login, users, clients);
+    }
 
     if (!user) {
       alert("Usuário ou senha inválidos, ou usuário inativo.");
@@ -354,7 +429,7 @@ export default function App() {
     setShowClientForm(true);
   }
 
-  function saveClient(event) {
+  async function saveClient(event) {
     event.preventDefault();
 
     if (!clientForm.companyName.trim()) {
@@ -363,17 +438,27 @@ export default function App() {
     }
 
     if (editingClientId) {
+      const updatedClient = {
+        ...clients.find((client) => client.id === editingClientId),
+        ...clientForm,
+        id: editingClientId,
+        companyName: clientForm.companyName.trim(),
+        fantasyName: clientForm.fantasyName.trim() || clientForm.companyName.trim(),
+        monthlyFee: Number(clientForm.monthlyFee || 0)
+      };
+
+      if (canUseAppDataApi()) {
+        try {
+          await saveAppClient(updatedClient);
+        } catch (error) {
+          alert(`Não foi possível salvar no banco: ${error.message}`);
+          return;
+        }
+      }
+
       setClients(
         clients.map((client) =>
-          client.id === editingClientId
-            ? {
-                ...client,
-                ...clientForm,
-                companyName: clientForm.companyName.trim(),
-                fantasyName: clientForm.fantasyName.trim() || clientForm.companyName.trim(),
-                monthlyFee: Number(clientForm.monthlyFee || 0)
-              }
-            : client
+          client.id === editingClientId ? updatedClient : client
         )
       );
       resetClientForm();
@@ -390,6 +475,15 @@ export default function App() {
       createdAt: new Date().toLocaleDateString("pt-BR"),
       status: clientForm.status || "Ativo"
     };
+
+    if (canUseAppDataApi()) {
+      try {
+        await saveAppClient(newClient);
+      } catch (error) {
+        alert(`Não foi possível salvar no banco: ${error.message}`);
+        return;
+      }
+    }
 
     setClients([newClient, ...clients]);
     resetClientForm();
@@ -418,17 +512,34 @@ export default function App() {
     setPage("clients");
   }
 
-  function deleteClient(clientId) {
+  async function deleteClient(clientId) {
     if (!confirm("Deseja excluir este cliente?")) return;
+    if (canUseAppDataApi()) {
+      try {
+        await removeAppClient(clientId);
+      } catch (error) {
+        alert(`Não foi possível excluir no banco: ${error.message}`);
+        return;
+      }
+    }
     setClients(clients.filter((client) => client.id !== clientId));
   }
 
-  function toggleClientStatus(clientId) {
-    setClients(clients.map((client) =>
-      client.id === clientId
-        ? { ...client, status: client.status === "Ativo" ? "Inativo" : "Ativo" }
-        : client
-    ));
+  async function toggleClientStatus(clientId) {
+    const currentClient = clients.find((client) => client.id === clientId);
+    if (!currentClient) return;
+    const updatedClient = { ...currentClient, status: currentClient.status === "Ativo" ? "Inativo" : "Ativo" };
+
+    if (canUseAppDataApi()) {
+      try {
+        await saveAppClient(updatedClient);
+      } catch (error) {
+        alert(`Não foi possível atualizar no banco: ${error.message}`);
+        return;
+      }
+    }
+
+    setClients(clients.map((client) => client.id === clientId ? updatedClient : client));
   }
 
   function openClientWorkspace(clientId) {
@@ -436,7 +547,7 @@ export default function App() {
     setPage("hub");
   }
 
-  function saveUser(event) {
+  async function saveUser(event) {
     event.preventDefault();
 
     if (!userForm.name.trim()) {
@@ -449,7 +560,7 @@ export default function App() {
       return;
     }
 
-    if (!userForm.password.trim()) {
+    if (!editingUserId && !userForm.password.trim()) {
       alert("Informe a senha do usuário.");
       return;
     }
@@ -464,11 +575,24 @@ export default function App() {
     }
 
     if (editingUserId) {
+      const existingUser = users.find((user) => user.id === editingUserId);
       const updatedUser = {
+        ...existingUser,
         ...userForm,
+        id: editingUserId,
+        password: userForm.password || existingUser?.password || "",
         userType: "platform",
         companyId: null
       };
+
+      if (canUseAppDataApi()) {
+        try {
+          await saveAppUser(updatedUser);
+        } catch (error) {
+          alert(`Não foi possível salvar no banco: ${error.message}`);
+          return;
+        }
+      }
 
       setUsers(users.map((user) => (user.id === editingUserId ? { ...user, ...updatedUser } : user)));
 
@@ -481,16 +605,24 @@ export default function App() {
       return;
     }
 
-    setUsers([
-      {
-        id: crypto.randomUUID(),
-        ...userForm,
-        userType: "platform",
-        companyId: null,
-        createdAt: new Date().toLocaleDateString("pt-BR")
-      },
-      ...users
-    ]);
+    const newUser = {
+      id: crypto.randomUUID(),
+      ...userForm,
+      userType: "platform",
+      companyId: null,
+      createdAt: new Date().toLocaleDateString("pt-BR")
+    };
+
+    if (canUseAppDataApi()) {
+      try {
+        await saveAppUser(newUser);
+      } catch (error) {
+        alert(`Não foi possível salvar no banco: ${error.message}`);
+        return;
+      }
+    }
+
+    setUsers([newUser, ...users]);
 
     setUserForm(emptyUserForm);
   }
@@ -506,13 +638,21 @@ export default function App() {
     });
   }
 
-  function deleteUser(userId) {
+  async function deleteUser(userId) {
     if (loggedUser?.id === userId) {
       alert("Você não pode excluir o usuário que está logado.");
       return;
     }
 
     if (!confirm("Deseja excluir este usuário?")) return;
+    if (canUseAppDataApi()) {
+      try {
+        await removeAppUser(userId);
+      } catch (error) {
+        alert(`Não foi possível excluir no banco: ${error.message}`);
+        return;
+      }
+    }
     setUsers(users.filter((user) => user.id !== userId));
   }
 
