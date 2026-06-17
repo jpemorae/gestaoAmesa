@@ -21,7 +21,6 @@ import {
 } from "./services/authService";
 import {
   addDaysFromDate,
-  addDaysToToday,
   currentTimeHHMM,
   diffDays,
   durationFromMinutes,
@@ -127,17 +126,38 @@ export default function App() {
   ], legacyCompanyId);
   const [stockItems, setStockItems] = useTenantPersistentState("gestao_mesa_stock_products", activeCompanyId, [], legacyCompanyId);
   const [stockLots, setStockLots] = useTenantPersistentState("gestao_mesa_stock_lots", activeCompanyId, [], legacyCompanyId);
+  const [stockMovements, setStockMovements] = useTenantPersistentState("gestao_mesa_stock_movements", activeCompanyId, [], legacyCompanyId);
+  const [stockLosses, setStockLosses] = useTenantPersistentState("gestao_mesa_stock_losses", activeCompanyId, [], legacyCompanyId);
+  const [stockSuppliers, setStockSuppliers] = useTenantPersistentState("gestao_mesa_stock_suppliers", activeCompanyId, ["Fornecedor padrão"], legacyCompanyId);
+  const [stockLocations, setStockLocations] = useTenantPersistentState("gestao_mesa_stock_locations", activeCompanyId, [
+    "Estoque seco",
+    "Câmara fria",
+    "Freezer",
+    "Cozinha",
+    "Bar",
+    "Salão"
+  ], legacyCompanyId);
   const [stockSearch, setStockSearch] = useState("");
   const [stockCategoryName, setStockCategoryName] = useState("");
   const [stockAlertDays, setStockAlertDays] = useState(2);
+  const [stockFilters, setStockFilters] = useState({ category: "Todos", supplier: "Todos", location: "Todos", status: "Todos" });
+  const [stockQuickFilter, setStockQuickFilter] = useState("todos");
+  const [stockModal, setStockModal] = useState(null);
   const [editingStockItemId, setEditingStockItemId] = useState(null);
   const [stockItemForm, setStockItemForm] = useState({
     name: "",
     type: "Produto",
     categoryId: "",
-    defaultQuantity: "",
+    internalCode: "",
+    barcode: "",
     unit: "kg",
-    defaultValidityDays: 3
+    minStock: "",
+    maxStock: "",
+    unitCost: "",
+    controlsExpiry: "Sim",
+    status: "Ativo",
+    defaultQuantity: 0,
+    defaultValidityDays: 0
   });
 
   const [processActivityForm, setProcessActivityForm] = useState({
@@ -154,9 +174,50 @@ export default function App() {
     itemId: "",
     quantity: "",
     quantityUnit: "g",
-    expiryDate: ""
+    supplier: "",
+    batchCode: "",
+    expiryDate: "",
+    unitCost: "",
+    location: "Estoque seco",
+    note: "",
+    invoiceFileName: ""
+  });
+  const [stockExitForm, setStockExitForm] = useState({
+    itemId: "",
+    quantity: "",
+    quantityUnit: "g",
+    reason: "Produção",
+    location: "Estoque seco",
+    note: ""
+  });
+  const [stockTransferForm, setStockTransferForm] = useState({
+    itemId: "",
+    quantity: "",
+    quantityUnit: "g",
+    fromLocation: "Estoque seco",
+    toLocation: "Cozinha",
+    note: ""
+  });
+  const [stockInventoryForm, setStockInventoryForm] = useState({
+    itemId: "",
+    location: "Estoque seco",
+    countedQuantity: "",
+    quantityUnit: "g",
+    reason: "Inventário periódico",
+    note: ""
+  });
+  const [stockLossForm, setStockLossForm] = useState({
+    itemId: "",
+    quantity: "",
+    quantityUnit: "g",
+    reason: "Vencimento",
+    responsible: "",
+    location: "Estoque seco",
+    note: "",
+    photoFileName: ""
   });
   const [editingStockLotId, setEditingStockLotId] = useState(null);
+  const [showStockEntryForm, setShowStockEntryForm] = useState(false);
 
   const [labelForm, setLabelForm] = useState({
     itemId: "",
@@ -170,6 +231,7 @@ export default function App() {
   const [labelConsumeCode, setLabelConsumeCode] = useState("");
   const [labelConsumeArea, setLabelConsumeArea] = useState("");
   const [labelConsumeOperator, setLabelConsumeOperator] = useState("");
+  const [labelPage, setLabelPage] = useState("operacional");
   const [qrActionCode, setQrActionCode] = useState("");
   const [qrActionArea, setQrActionArea] = useState("");
   const [qrActionOperator, setQrActionOperator] = useState("");
@@ -464,18 +526,99 @@ export default function App() {
     return stockItems.map((item) => {
       const category = item.category || stockCategories.find((cat) => cat.id === item.categoryId)?.name || "Sem categoria";
       const stockUnit = baseUnitFor(item.unit);
-      const totalStock = stockLots
-        .filter((lot) => lot.itemId === item.id)
+      const itemLots = stockLots.filter((lot) => lot.itemId === item.id && Number(lot.quantity || 0) > 0);
+      const totalStock = itemLots
         .reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
+      const nextExpiryLot = item.controlsExpiry === "Não" ? null : itemLots
+        .filter((lot) => lot.expiryDate)
+        .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0];
+      const mainLocation = itemLots[0]?.location || item.location || "Sem local";
+      const supplier = itemLots[0]?.supplier || item.supplier || "Sem fornecedor";
+      const unitCost = Number(item.unitCost ?? itemLots[0]?.unitCost ?? 0);
+      const totalValue = itemLots.reduce((sum, lot) => sum + Number(lot.quantity || 0) * Number(lot.unitCost ?? unitCost ?? 0), 0);
+      const lastMovement = stockMovements
+        .filter((lot) => lot.itemId === item.id)
+        .sort((a, b) => new Date(b.createdAtIso || b.createdAt || 0) - new Date(a.createdAtIso || a.createdAt || 0))[0];
+      const minStock = Number(item.minStock || 0);
+      const hasExpired = itemLots.some((lot) => lot.expiryDate && diffDays(lot.expiryDate) < 0);
+      const hasExpiring = itemLots.some((lot) => {
+        const days = lot.expiryDate ? diffDays(lot.expiryDate) : 9999;
+        return days >= 0 && days <= stockAlertDays;
+      });
+      const status = hasExpired
+        ? "Vencido"
+        : minStock > 0 && totalStock <= minStock * 0.5
+          ? "Crítico"
+          : minStock > 0 && totalStock <= minStock
+            ? "Atenção"
+            : hasExpiring
+              ? "Atenção"
+              : "Normal";
 
-      return { ...item, category, stockUnit, totalStock };
+      return {
+        ...item,
+        productStatus: item.status || "Ativo",
+        category,
+        stockUnit,
+        totalStock,
+        nextExpiry: nextExpiryLot?.expiryDate || "",
+        mainLocation,
+        supplier,
+        unitCost,
+        totalValue,
+        status,
+        lastMovementAt: lastMovement?.createdAtIso || lastMovement?.createdAt || item.createdAt || ""
+      };
     });
-  }, [stockItems, stockCategories, stockLots]);
+  }, [stockItems, stockCategories, stockLots, stockMovements, stockAlertDays]);
 
   const filteredStockItems = useMemo(() => {
     const query = stockSearch.trim().toLowerCase();
-    return stockItemsView.filter((item) => `${item.name} ${item.category} ${item.type}`.toLowerCase().includes(query));
-  }, [stockItemsView, stockSearch]);
+    const now = new Date();
+
+    return stockItemsView.filter((item) => {
+      const matchesQuery = `${item.name} ${item.category} ${item.type} ${item.internalCode || ""} ${item.barcode || ""}`.toLowerCase().includes(query);
+      const matchesCategory = stockFilters.category === "Todos" || item.categoryId === stockFilters.category || item.category === stockFilters.category;
+      const matchesSupplier = stockFilters.supplier === "Todos" || item.supplier === stockFilters.supplier;
+      const matchesLocation = stockFilters.location === "Todos" || item.mainLocation === stockFilters.location;
+      const matchesStatus = stockFilters.status === "Todos" || item.status === stockFilters.status;
+      const daysSinceMovement = item.lastMovementAt ? Math.floor((now - new Date(item.lastMovementAt)) / (1000 * 60 * 60 * 24)) : 999;
+      const matchesQuick =
+        stockQuickFilter === "todos" ||
+        (stockQuickFilter === "baixo" && (item.status === "Atenção" || item.status === "Crítico")) ||
+        (stockQuickFilter === "vencendo" && item.nextExpiry && diffDays(item.nextExpiry) >= 0 && diffDays(item.nextExpiry) <= stockAlertDays) ||
+        (stockQuickFilter === "vencidos" && item.status === "Vencido") ||
+        (stockQuickFilter === "sem-movimento" && daysSinceMovement >= 30);
+
+      const isStockProduct = item.type === "Produto" || item.type === "Item";
+      return isStockProduct && matchesQuery && matchesCategory && matchesSupplier && matchesLocation && matchesStatus && matchesQuick && item.productStatus !== "Inativo";
+    });
+  }, [stockItemsView, stockSearch, stockFilters, stockQuickFilter, stockAlertDays]);
+
+  const stockDashboard = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const activeProducts = stockItemsView.filter((item) => item.productStatus !== "Inativo");
+    const lossMonth = stockLosses
+      .filter((loss) => {
+        const date = new Date(loss.createdAtIso || loss.createdAt || 0);
+        return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+      })
+      .reduce((sum, loss) => sum + Number(loss.totalValue || 0), 0);
+
+    return {
+      totalValue: activeProducts.reduce((sum, item) => sum + Number(item.totalValue || 0), 0),
+      lowStock: activeProducts.filter((item) => item.status === "Atenção" || item.status === "Crítico").length,
+      expiring: activeProducts.filter((item) => item.nextExpiry && diffDays(item.nextExpiry) >= 0 && diffDays(item.nextExpiry) <= stockAlertDays).length,
+      expired: activeProducts.filter((item) => item.status === "Vencido").length,
+      stale: activeProducts.filter((item) => {
+        if (!item.lastMovementAt) return true;
+        return Math.floor((now - new Date(item.lastMovementAt)) / (1000 * 60 * 60 * 24)) >= 30;
+      }).length,
+      lossMonth
+    };
+  }, [stockItemsView, stockLosses, stockAlertDays]);
 
   function addStockCategory(event) {
     event.preventDefault();
@@ -516,8 +659,11 @@ export default function App() {
               ...item,
               ...stockItemForm,
               name: stockItemForm.name.trim(),
-              defaultQuantity: normalizeDecimal(stockItemForm.defaultQuantity),
-              defaultValidityDays: Number(stockItemForm.defaultValidityDays || 0)
+              minStock: normalizeDecimal(stockItemForm.minStock),
+              maxStock: normalizeDecimal(stockItemForm.maxStock),
+              unitCost: normalizeDecimal(stockItemForm.unitCost),
+              defaultQuantity: 0,
+              defaultValidityDays: 0
             }
           : item
       ));
@@ -530,41 +676,31 @@ export default function App() {
       id: crypto.randomUUID(),
       ...stockItemForm,
       name: stockItemForm.name.trim(),
-      defaultQuantity: normalizeDecimal(stockItemForm.defaultQuantity),
-      defaultValidityDays: Number(stockItemForm.defaultValidityDays || 0)
+      minStock: normalizeDecimal(stockItemForm.minStock),
+      maxStock: normalizeDecimal(stockItemForm.maxStock),
+      unitCost: normalizeDecimal(stockItemForm.unitCost),
+      defaultQuantity: 0,
+      defaultValidityDays: 0,
+      createdAt: new Date().toLocaleString("pt-BR")
     };
 
     setStockItems([newItem, ...stockItems]);
-
-    const initialQuantity = normalizeDecimal(stockItemForm.defaultQuantity);
-
-    if ((stockItemForm.type === "Produto" || stockItemForm.type === "Item") && initialQuantity > 0) {
-      const converted = toBaseUnit(initialQuantity, stockItemForm.unit);
-      const expiryDate = addDaysToToday(Number(stockItemForm.defaultValidityDays || 0));
-
-      setStockLots([
-        {
-          id: crypto.randomUUID(),
-          itemId: newItem.id,
-          quantity: converted.quantity,
-          initialQuantity: converted.quantity,
-          unit: converted.unit,
-          inputQuantity: initialQuantity,
-          inputUnit: stockItemForm.unit,
-          expiryDate,
-          createdAt: new Date().toLocaleString("pt-BR"),
-          clientName: getCurrentClient()?.fantasyName || getCurrentClient()?.companyName || "Cliente",
-          clientLogo: getCurrentClient()?.logo || "",
-          origin: "Cadastro inicial"
-        },
-        ...stockLots
-      ]);
-    }
-
+    appendStockMovement({
+      itemId: newItem.id,
+      itemName: newItem.name,
+      type: "Ajuste",
+      quantity: 0,
+      unit: newItem.unit,
+      fromLocation: "",
+      toLocation: "",
+      reason: "Produto cadastrado",
+      note: "Cadastro mestre criado"
+    });
     resetStockItemForm({
       type: stockItemForm.type,
       categoryId: stockItemForm.categoryId
     });
+    closeStockModal();
   }
 
   function resetStockItemForm(overrides = {}) {
@@ -572,9 +708,16 @@ export default function App() {
       name: "",
       type: overrides.type || "Produto",
       categoryId: overrides.categoryId || "",
-      defaultQuantity: "",
+      internalCode: "",
+      barcode: "",
       unit: "kg",
-      defaultValidityDays: 3
+      minStock: "",
+      maxStock: "",
+      unitCost: "",
+      controlsExpiry: "Sim",
+      status: "Ativo",
+      defaultQuantity: 0,
+      defaultValidityDays: 0
     });
     setEditingStockItemId(null);
   }
@@ -587,9 +730,16 @@ export default function App() {
       name: item.name || "",
       type: item.type || "Produto",
       categoryId: item.categoryId || "",
-      defaultQuantity: item.defaultQuantity || "",
+      internalCode: item.internalCode || "",
+      barcode: item.barcode || "",
       unit: item.unit || "kg",
-      defaultValidityDays: item.defaultValidityDays ?? 3
+      minStock: item.minStock || "",
+      maxStock: item.maxStock || "",
+      unitCost: item.unitCost || "",
+      controlsExpiry: item.controlsExpiry || "Sim",
+      status: item.productStatus || item.status || "Ativo",
+      defaultQuantity: 0,
+      defaultValidityDays: 0
     });
   }
 
@@ -651,6 +801,7 @@ export default function App() {
   function resetStockEntryForm() {
     setStockEntryForm({ itemId: "", quantity: "", quantityUnit: "g", expiryDate: "" });
     setEditingStockLotId(null);
+    setShowStockEntryForm(false);
   }
 
   function deleteStockLot(lotId) {
@@ -660,13 +811,369 @@ export default function App() {
 
   function editStockLot(lot) {
     setEditingStockLotId(lot.id);
-    setStockPage("lancamento");
+    setShowStockEntryForm(true);
+    setStockPage("estoque");
     setStockEntryForm({
       itemId: lot.itemId || "",
       quantity: lot.inputQuantity ?? lot.quantity ?? "",
       quantityUnit: lot.inputUnit || lot.unit || "g",
       expiryDate: lot.expiryDate || ""
     });
+  }
+
+  function currentOperatorName() {
+    return loggedUser?.name || loggedUser?.email || "Usuário não identificado";
+  }
+
+  function movementPayload(payload) {
+    const now = new Date();
+    return {
+      id: crypto.randomUUID(),
+      createdAt: now.toLocaleString("pt-BR"),
+      createdAtIso: now.toISOString(),
+      userId: loggedUser?.id || "",
+      userName: currentOperatorName(),
+      ...payload
+    };
+  }
+
+  function appendStockMovement(payload) {
+    setStockMovements((current) => [movementPayload(payload), ...current]);
+  }
+
+  function activeStockProducts() {
+    return stockItemsView.filter((item) => (item.type === "Produto" || item.type === "Item") && item.productStatus !== "Inativo");
+  }
+
+  function ensureSupplier(name) {
+    const supplier = (name || "Fornecedor padrão").trim();
+    if (supplier && !stockSuppliers.some((item) => item.toLowerCase() === supplier.toLowerCase())) {
+      setStockSuppliers([...stockSuppliers, supplier]);
+    }
+    return supplier;
+  }
+
+  function ensureLocation(name) {
+    const location = (name || "Estoque seco").trim();
+    if (location && !stockLocations.some((item) => item.toLowerCase() === location.toLowerCase())) {
+      setStockLocations([...stockLocations, location]);
+    }
+    return location;
+  }
+
+  function stockLotsForConsumption(itemId, location = "") {
+    return stockLots
+      .filter((lot) => lot.itemId === itemId && Number(lot.quantity || 0) > 0 && (!location || lot.location === location))
+      .sort((a, b) => {
+        const dateA = a.expiryDate ? new Date(a.expiryDate).getTime() : Number.MAX_SAFE_INTEGER;
+        const dateB = b.expiryDate ? new Date(b.expiryDate).getTime() : Number.MAX_SAFE_INTEGER;
+        return dateA - dateB;
+      });
+  }
+
+  function consumeStockLots({ item, quantity, location, allowExpired = false, note = "", movementType = "Saída", reason = "Saída", skipMovement = false }) {
+    let remaining = Number(quantity || 0);
+    const eligibleLots = stockLotsForConsumption(item.id, location);
+    const available = eligibleLots.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
+
+    if (available < remaining) {
+      alert(`Saldo insuficiente. Disponível em ${location || "todos os locais"}: ${formatStockDisplay(available, item.stockUnit)}.`);
+      return null;
+    }
+
+    if (!allowExpired) {
+      const expiredLot = eligibleLots.find((lot) => lot.expiryDate && diffDays(lot.expiryDate) < 0);
+      if (expiredLot && !confirm("Há lote vencido na regra FEFO. Deseja consumir mesmo assim com justificativa na observação?")) {
+        return null;
+      }
+    }
+
+    const consumedLots = [];
+    const nextLots = stockLots.map((lot) => {
+      if (remaining <= 0 || !eligibleLots.some((eligible) => eligible.id === lot.id)) return lot;
+      const used = Math.min(Number(lot.quantity || 0), remaining);
+      remaining -= used;
+      consumedLots.push({ ...lot, used });
+      return { ...lot, quantity: Number(lot.quantity || 0) - used };
+    });
+
+    setStockLots(nextLots);
+    if (!skipMovement) {
+      appendStockMovement({
+        itemId: item.id,
+        itemName: item.name,
+        type: movementType,
+        quantity,
+        unit: item.stockUnit,
+        fromLocation: location,
+        toLocation: "",
+        reason,
+        note,
+        lots: consumedLots.map((lot) => ({ lotId: lot.id, batchCode: lot.batchCode || "", quantity: lot.used }))
+      });
+    }
+
+    return consumedLots;
+  }
+
+  function openStockModal(type, item = null) {
+    if (type === "product") {
+      if (item) editStockItem(item);
+      else resetStockItemForm();
+    }
+    setStockModal(type);
+  }
+
+  function closeStockModal() {
+    setStockModal(null);
+    setEditingStockItemId(null);
+  }
+
+  function inactivateStockItem(itemId) {
+    const hasMovements = stockMovements.some((movement) => movement.itemId === itemId);
+    const message = hasMovements
+      ? "Este produto possui movimentações. Ele será inativado e permanecerá no histórico."
+      : "Deseja inativar este produto?";
+    if (!confirm(message)) return;
+    const item = stockItems.find((currentItem) => currentItem.id === itemId);
+    setStockItems(stockItems.map((currentItem) => currentItem.id === itemId ? { ...currentItem, status: "Inativo" } : currentItem));
+    appendStockMovement({
+      itemId,
+      itemName: item?.name || "Produto",
+      type: "Ajuste",
+      quantity: 0,
+      unit: item?.unit || "",
+      fromLocation: "",
+      toLocation: "",
+      reason: "Produto inativado",
+      note: "Exclusão lógica do cadastro"
+    });
+  }
+
+  function saveStockEntryAdvanced(event) {
+    event.preventDefault();
+    if (!stockEntryForm.itemId) return alert("Selecione um produto.");
+    if (!stockEntryForm.quantity || normalizeDecimal(stockEntryForm.quantity) <= 0) return alert("Informe uma quantidade maior que zero.");
+
+    const item = stockItemsView.find((currentItem) => currentItem.id === stockEntryForm.itemId);
+    const converted = toBaseUnit(stockEntryForm.quantity, stockEntryForm.quantityUnit);
+    if (!item || converted.unit !== item.stockUnit) return alert("Unidade incompatível com o produto.");
+    if (item.controlsExpiry !== "Não" && !stockEntryForm.expiryDate) return alert("Informe a validade.");
+
+    const supplier = ensureSupplier(stockEntryForm.supplier);
+    const location = ensureLocation(stockEntryForm.location);
+    const unitCost = Number(stockEntryForm.unitCost || item.unitCost || 0);
+    const newLot = {
+      id: editingStockLotId || crypto.randomUUID(),
+      itemId: item.id,
+      quantity: converted.quantity,
+      initialQuantity: converted.quantity,
+      unit: converted.unit,
+      inputQuantity: normalizeDecimal(stockEntryForm.quantity),
+      inputUnit: stockEntryForm.quantityUnit,
+      supplier,
+      batchCode: stockEntryForm.batchCode || `LOTE-${Date.now()}`,
+      expiryDate: item.controlsExpiry === "Não" ? "" : stockEntryForm.expiryDate,
+      unitCost,
+      location,
+      note: stockEntryForm.note || "",
+      invoiceFileName: stockEntryForm.invoiceFileName || "",
+      createdAt: new Date().toLocaleString("pt-BR"),
+      createdAtIso: new Date().toISOString()
+    };
+
+    setStockLots(editingStockLotId ? stockLots.map((lot) => lot.id === editingStockLotId ? newLot : lot) : [newLot, ...stockLots]);
+    appendStockMovement({
+      itemId: item.id,
+      itemName: item.name,
+      type: editingStockLotId ? "Ajuste" : "Entrada",
+      quantity: converted.quantity,
+      unit: converted.unit,
+      fromLocation: "",
+      toLocation: location,
+      reason: editingStockLotId ? "Correção de entrada" : "Entrada de estoque",
+      note: stockEntryForm.note || "",
+      supplier,
+      batchCode: newLot.batchCode
+    });
+
+    setEditingStockLotId(null);
+    setStockEntryForm({ itemId: "", quantity: "", quantityUnit: "g", supplier: "", batchCode: "", expiryDate: "", unitCost: "", location: "Estoque seco", note: "", invoiceFileName: "" });
+    closeStockModal();
+  }
+
+  function saveStockExit(event) {
+    event.preventDefault();
+    if (!stockExitForm.itemId) return alert("Selecione um produto.");
+    if (!stockExitForm.quantity || normalizeDecimal(stockExitForm.quantity) <= 0) return alert("Informe uma quantidade maior que zero.");
+    const item = stockItemsView.find((currentItem) => currentItem.id === stockExitForm.itemId);
+    const converted = toBaseUnit(stockExitForm.quantity, stockExitForm.quantityUnit);
+    if (!item || converted.unit !== item.stockUnit) return alert("Unidade incompatível com o produto.");
+    const consumed = consumeStockLots({
+      item,
+      quantity: converted.quantity,
+      location: stockExitForm.location,
+      note: stockExitForm.note,
+      movementType: stockExitForm.reason === "Descarte" ? "Descarte" : "Saída",
+      reason: stockExitForm.reason
+    });
+    if (!consumed) return;
+    setStockExitForm({ itemId: "", quantity: "", quantityUnit: "g", reason: "Produção", location: "Estoque seco", note: "" });
+    closeStockModal();
+  }
+
+  function saveStockTransfer(event) {
+    event.preventDefault();
+    if (!stockTransferForm.itemId) return alert("Selecione um produto.");
+    if (stockTransferForm.fromLocation === stockTransferForm.toLocation) return alert("Origem e destino precisam ser diferentes.");
+    const item = stockItemsView.find((currentItem) => currentItem.id === stockTransferForm.itemId);
+    const converted = toBaseUnit(stockTransferForm.quantity, stockTransferForm.quantityUnit);
+    if (!item || converted.unit !== item.stockUnit) return alert("Unidade incompatível com o produto.");
+    const consumed = consumeStockLots({
+      item,
+      quantity: converted.quantity,
+      location: stockTransferForm.fromLocation,
+      note: stockTransferForm.note,
+      movementType: "Transferência",
+      reason: "Transferência entre locais",
+      skipMovement: true
+    });
+    if (!consumed) return;
+
+    const destination = ensureLocation(stockTransferForm.toLocation);
+    const transferLots = consumed.map((lot) => ({
+      id: crypto.randomUUID(),
+      itemId: item.id,
+      quantity: lot.used,
+      initialQuantity: lot.used,
+      unit: item.stockUnit,
+      inputQuantity: lot.used,
+      inputUnit: item.stockUnit,
+      supplier: lot.supplier || "",
+      batchCode: lot.batchCode || `TRANSF-${Date.now()}`,
+      expiryDate: lot.expiryDate || "",
+      unitCost: lot.unitCost || item.unitCost || 0,
+      location: destination,
+      note: stockTransferForm.note || "",
+      createdAt: new Date().toLocaleString("pt-BR"),
+      createdAtIso: new Date().toISOString()
+    }));
+    setStockLots((current) => [...transferLots, ...current]);
+    appendStockMovement({
+      itemId: item.id,
+      itemName: item.name,
+      type: "Transferência",
+      quantity: converted.quantity,
+      unit: converted.unit,
+      fromLocation: stockTransferForm.fromLocation,
+      toLocation: destination,
+      reason: "Transferência entre locais",
+      note: stockTransferForm.note || ""
+    });
+    setStockTransferForm({ itemId: "", quantity: "", quantityUnit: "g", fromLocation: "Estoque seco", toLocation: "Cozinha", note: "" });
+    closeStockModal();
+  }
+
+  function saveStockInventory(event) {
+    event.preventDefault();
+    if (!stockInventoryForm.itemId) return alert("Selecione um produto.");
+    const item = stockItemsView.find((currentItem) => currentItem.id === stockInventoryForm.itemId);
+    const counted = toBaseUnit(stockInventoryForm.countedQuantity, stockInventoryForm.quantityUnit);
+    if (!item || counted.unit !== item.stockUnit) return alert("Unidade incompatível com o produto.");
+    const location = ensureLocation(stockInventoryForm.location);
+    const currentQuantity = stockLots
+      .filter((lot) => lot.itemId === item.id && lot.location === location)
+      .reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
+    const difference = counted.quantity - currentQuantity;
+
+    if (difference >= 0) {
+      setStockLots([
+        {
+          id: crypto.randomUUID(),
+          itemId: item.id,
+          quantity: difference,
+          initialQuantity: difference,
+          unit: item.stockUnit,
+          inputQuantity: difference,
+          inputUnit: item.stockUnit,
+          supplier: "Inventário",
+          batchCode: `INV-${Date.now()}`,
+          expiryDate: "",
+          unitCost: item.unitCost || 0,
+          location,
+          note: stockInventoryForm.note || "",
+          createdAt: new Date().toLocaleString("pt-BR"),
+          createdAtIso: new Date().toISOString()
+        },
+        ...stockLots
+      ]);
+    } else {
+      const consumed = consumeStockLots({
+        item,
+        quantity: Math.abs(difference),
+        location,
+        allowExpired: true,
+        note: stockInventoryForm.note,
+        movementType: "Inventário",
+        reason: stockInventoryForm.reason
+      });
+      if (!consumed) return;
+    }
+
+    appendStockMovement({
+      itemId: item.id,
+      itemName: item.name,
+      type: "Inventário",
+      quantity: difference,
+      unit: item.stockUnit,
+      fromLocation: location,
+      toLocation: location,
+      reason: stockInventoryForm.reason,
+      note: `Esperado: ${formatStockDisplay(currentQuantity, item.stockUnit)} | Contado: ${formatStockDisplay(counted.quantity, item.stockUnit)}. ${stockInventoryForm.note || ""}`.trim()
+    });
+    setStockInventoryForm({ itemId: "", location: "Estoque seco", countedQuantity: "", quantityUnit: "g", reason: "Inventário periódico", note: "" });
+    closeStockModal();
+  }
+
+  function saveStockLoss(event) {
+    event.preventDefault();
+    if (!stockLossForm.itemId) return alert("Selecione um produto.");
+    if (!stockLossForm.quantity || normalizeDecimal(stockLossForm.quantity) <= 0) return alert("Informe a quantidade perdida.");
+    if (!stockLossForm.responsible.trim()) return alert("Informe o responsável.");
+    const item = stockItemsView.find((currentItem) => currentItem.id === stockLossForm.itemId);
+    const converted = toBaseUnit(stockLossForm.quantity, stockLossForm.quantityUnit);
+    if (!item || converted.unit !== item.stockUnit) return alert("Unidade incompatível com o produto.");
+    const consumed = consumeStockLots({
+      item,
+      quantity: converted.quantity,
+      location: stockLossForm.location,
+      allowExpired: true,
+      note: stockLossForm.note,
+      movementType: "Descarte",
+      reason: stockLossForm.reason
+    });
+    if (!consumed) return;
+    const totalValue = consumed.reduce((sum, lot) => sum + Number(lot.used || 0) * Number(lot.unitCost || item.unitCost || 0), 0);
+    setStockLosses([
+      {
+        id: crypto.randomUUID(),
+        itemId: item.id,
+        itemName: item.name,
+        quantity: converted.quantity,
+        unit: converted.unit,
+        reason: stockLossForm.reason,
+        responsible: stockLossForm.responsible,
+        location: stockLossForm.location,
+        note: stockLossForm.note,
+        photoFileName: stockLossForm.photoFileName,
+        totalValue,
+        createdAt: new Date().toLocaleString("pt-BR"),
+        createdAtIso: new Date().toISOString()
+      },
+      ...stockLosses
+    ]);
+    setStockLossForm({ itemId: "", quantity: "", quantityUnit: "g", reason: "Vencimento", responsible: "", location: "Estoque seco", note: "", photoFileName: "" });
+    closeStockModal();
   }
 
 
@@ -1045,7 +1552,7 @@ export default function App() {
 
   function renderCadastroSelector() {
     const options = [
-      { id: "produto", title: "Produto / Item", icon: "📦", description: "Cadastre itens com controle de quantidade, unidade e validade." }
+      { id: "produto", title: "Produto / Item", icon: "📦", description: "Cadastre os produtos que serão movimentados no estoque." }
     ];
 
     return (
@@ -1069,16 +1576,16 @@ export default function App() {
   function renderStockCadastro() {
     return (
       <>
-        <section className="module-content stock-wide">
-          <h2>Cadastro</h2>
-          <p className="stock-help">Cadastre produtos e itens que terão controle de quantidade, unidade e validade.</p>
+          <section className="module-content stock-wide">
+            <h2>Cadastro</h2>
+          <p className="stock-help">Cadastre a base de produtos e itens. Quantidade e validade entram na tela Estoque.</p>
           {renderCadastroSelector()}
         </section>
 
         {stockCadastroType === "produto" && (
           <section className="module-content stock-wide">
             <h2>{editingStockItemId ? "Editar produto ou item" : "Cadastrar produto ou item"}</h2>
-            <p className="stock-help">Use este cadastro para tudo que terá controle de quantidade, peso, unidade e validade.</p>
+            <p className="stock-help">Informe apenas os dados fixos do produto. O saldo, lote e validade ficam no cadastro de estoque.</p>
 
             <form className="stock-form-grid" onSubmit={saveStockItem}>
               <label>
@@ -1102,6 +1609,24 @@ export default function App() {
               </label>
 
               <label>
+                Código interno
+                <input
+                  value={stockItemForm.internalCode}
+                  onChange={(event) => setStockItemForm({ ...stockItemForm, internalCode: event.target.value })}
+                  placeholder="Ex: INS-001"
+                />
+              </label>
+
+              <label>
+                Código de barras
+                <input
+                  value={stockItemForm.barcode}
+                  onChange={(event) => setStockItemForm({ ...stockItemForm, barcode: event.target.value })}
+                  placeholder="EAN, SKU ou código interno"
+                />
+              </label>
+
+              <label>
                 Categoria
                 <select
                   value={stockItemForm.categoryId}
@@ -1114,21 +1639,10 @@ export default function App() {
                 </select>
               </label>
 
-              <label>
-                Quantidade / peso padrão
-                <input
-                  type="number"
-                  step="0.001"
-                  value={stockItemForm.defaultQuantity}
-                  onChange={(event) => setStockItemForm({ ...stockItemForm, defaultQuantity: event.target.value })}
-                  placeholder="Ex: 1"
-                />
-              </label>
-
               <div className="unit-picker-stock">
                 <span>Unidade padrão</span>
                 <div className="unit-buttons-stock">
-                  {["g", "kg", "un", "ml", "L"].map((unit) => (
+                  {["kg", "g", "L", "ml", "un", "pacote", "caixa"].map((unit) => (
                     <button
                       type="button"
                       key={unit}
@@ -1142,12 +1656,52 @@ export default function App() {
               </div>
 
               <label>
-                Validade padrão em dias
+                Estoque mínimo
                 <input
                   type="number"
-                  value={stockItemForm.defaultValidityDays}
-                  onChange={(event) => setStockItemForm({ ...stockItemForm, defaultValidityDays: event.target.value })}
+                  step="0.001"
+                  value={stockItemForm.minStock}
+                  onChange={(event) => setStockItemForm({ ...stockItemForm, minStock: event.target.value })}
+                  placeholder="Ex: 5"
                 />
+              </label>
+
+              <label>
+                Estoque máximo
+                <input
+                  type="number"
+                  step="0.001"
+                  value={stockItemForm.maxStock}
+                  onChange={(event) => setStockItemForm({ ...stockItemForm, maxStock: event.target.value })}
+                  placeholder="Ex: 50"
+                />
+              </label>
+
+              <label>
+                Custo unitário
+                <input
+                  type="number"
+                  step="0.01"
+                  value={stockItemForm.unitCost}
+                  onChange={(event) => setStockItemForm({ ...stockItemForm, unitCost: event.target.value })}
+                  placeholder="Ex: 12.90"
+                />
+              </label>
+
+              <label>
+                Controla validade?
+                <select value={stockItemForm.controlsExpiry} onChange={(event) => setStockItemForm({ ...stockItemForm, controlsExpiry: event.target.value })}>
+                  <option>Sim</option>
+                  <option>Não</option>
+                </select>
+              </label>
+
+              <label>
+                Status
+                <select value={stockItemForm.status} onChange={(event) => setStockItemForm({ ...stockItemForm, status: event.target.value })}>
+                  <option>Ativo</option>
+                  <option>Inativo</option>
+                </select>
               </label>
 
               <button className="primary" type="submit">
@@ -1216,7 +1770,7 @@ export default function App() {
                   <th>Tipo</th>
                   <th>Nome</th>
                   <th>Categoria/Área</th>
-                  <th>Padrão/Horário</th>
+                  <th>Unidade/Horário</th>
                   <th>Unidade/Frequência</th>
                   <th>Estoque atual/Repetição</th>
                   <th>Ações</th>
@@ -1231,7 +1785,7 @@ export default function App() {
                     <td>
                       {item.type === "Processo" || item.type === "Atividade"
                         ? `${item.startTime || "--"} às ${item.endTime || "--"}`
-                        : item.defaultQuantity ? `${formatQuantity(item.defaultQuantity)} ${unitLabel(item.unit)}` : "--"}
+                        : unitLabel(item.unit)}
                     </td>
                     <td>{item.frequency || unitLabel(item.stockUnit)}</td>
                     <td>
@@ -1329,71 +1883,563 @@ export default function App() {
     );
   }
 
+  function StockModal({ title, children }) {
+    return (
+      <div className="stock-modal-backdrop">
+        <section className="stock-modal">
+          <div className="stock-modal-header">
+            <h2>{title}</h2>
+            <button className="secondary" type="button" onClick={closeStockModal}>Fechar</button>
+          </div>
+          {children}
+        </section>
+      </div>
+    );
+  }
+
+  function productOptions() {
+    return activeStockProducts().map((item) => (
+      <option key={item.id} value={item.id}>{item.name} - {item.category}</option>
+    ));
+  }
+
+  function selectedStockModalItem(form) {
+    return stockItemsView.find((item) => item.id === form.itemId);
+  }
+
+  function renderStockProductModal() {
+    return (
+      <StockModal title={editingStockItemId ? "Editar produto" : "Novo produto"}>
+        <form className="stock-form-grid stock-modal-form" onSubmit={saveStockItem}>
+          <label>
+            Nome do produto
+            <input value={stockItemForm.name} onChange={(event) => setStockItemForm({ ...stockItemForm, name: event.target.value })} placeholder="Ex: Carne, arroz, cerveja" />
+          </label>
+          <label>
+            Categoria
+            <select value={stockItemForm.categoryId} onChange={(event) => setStockItemForm({ ...stockItemForm, categoryId: event.target.value })}>
+              <option value="">Selecione</option>
+              {stockCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Código interno
+            <input value={stockItemForm.internalCode} onChange={(event) => setStockItemForm({ ...stockItemForm, internalCode: event.target.value })} placeholder="Ex: INS-001" />
+          </label>
+          <label>
+            Código de barras
+            <input value={stockItemForm.barcode} onChange={(event) => setStockItemForm({ ...stockItemForm, barcode: event.target.value })} placeholder="EAN, SKU ou código" />
+          </label>
+          <label>
+            Unidade de medida
+            <select value={stockItemForm.unit} onChange={(event) => setStockItemForm({ ...stockItemForm, unit: event.target.value })}>
+              {["kg", "g", "L", "ml", "un", "pacote", "caixa"].map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}
+            </select>
+          </label>
+          <label>
+            Estoque mínimo
+            <input type="number" step="0.001" value={stockItemForm.minStock} onChange={(event) => setStockItemForm({ ...stockItemForm, minStock: event.target.value })} />
+          </label>
+          <label>
+            Estoque máximo
+            <input type="number" step="0.001" value={stockItemForm.maxStock} onChange={(event) => setStockItemForm({ ...stockItemForm, maxStock: event.target.value })} />
+          </label>
+          <label>
+            Custo unitário
+            <input type="number" step="0.01" value={stockItemForm.unitCost} onChange={(event) => setStockItemForm({ ...stockItemForm, unitCost: event.target.value })} />
+          </label>
+          <label>
+            Controla validade?
+            <select value={stockItemForm.controlsExpiry} onChange={(event) => setStockItemForm({ ...stockItemForm, controlsExpiry: event.target.value })}>
+              <option>Sim</option>
+              <option>Não</option>
+            </select>
+          </label>
+          <label>
+            Ativo/Inativo
+            <select value={stockItemForm.status} onChange={(event) => setStockItemForm({ ...stockItemForm, status: event.target.value })}>
+              <option>Ativo</option>
+              <option>Inativo</option>
+            </select>
+          </label>
+          <div className="stock-modal-footer">
+            <button className="secondary" type="button" onClick={closeStockModal}>Cancelar</button>
+            <button className="primary" type="submit">{editingStockItemId ? "Salvar produto" : "Cadastrar produto"}</button>
+          </div>
+        </form>
+      </StockModal>
+    );
+  }
+
+  function renderStockEntryModal() {
+    const item = selectedStockModalItem(stockEntryForm);
+    const compatibleUnits = compatibleUnitsFor(item?.unit || "g");
+    return (
+      <StockModal title={editingStockLotId ? "Editar entrada" : "Nova entrada"}>
+        <form className="stock-form-grid stock-modal-form" onSubmit={saveStockEntryAdvanced}>
+          <label>
+            Produto
+            <select value={stockEntryForm.itemId} onChange={(event) => {
+              const selected = stockItemsView.find((currentItem) => currentItem.id === event.target.value);
+              setStockEntryForm({ ...stockEntryForm, itemId: event.target.value, quantityUnit: compatibleUnitsFor(selected?.unit || "g")[0], unitCost: selected?.unitCost || "" });
+            }}>
+              <option value="">Selecione</option>
+              {productOptions()}
+            </select>
+          </label>
+          <label>
+            Quantidade
+            <input type="number" step="0.001" value={stockEntryForm.quantity} onChange={(event) => setStockEntryForm({ ...stockEntryForm, quantity: event.target.value })} />
+          </label>
+          <label>
+            Unidade
+            <select value={stockEntryForm.quantityUnit} onChange={(event) => setStockEntryForm({ ...stockEntryForm, quantityUnit: event.target.value })}>
+              {compatibleUnits.map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}
+            </select>
+          </label>
+          <label>
+            Fornecedor
+            <input list="stock-suppliers" value={stockEntryForm.supplier} onChange={(event) => setStockEntryForm({ ...stockEntryForm, supplier: event.target.value })} placeholder="Fornecedor" />
+          </label>
+          <label>
+            Lote
+            <input value={stockEntryForm.batchCode} onChange={(event) => setStockEntryForm({ ...stockEntryForm, batchCode: event.target.value })} placeholder="Ex: L2506" />
+          </label>
+          <label>
+            Data de validade
+            <input type="date" value={stockEntryForm.expiryDate} onChange={(event) => setStockEntryForm({ ...stockEntryForm, expiryDate: event.target.value })} disabled={item?.controlsExpiry === "Não"} />
+          </label>
+          <label>
+            Custo unitário
+            <input type="number" step="0.01" value={stockEntryForm.unitCost} onChange={(event) => setStockEntryForm({ ...stockEntryForm, unitCost: event.target.value })} />
+          </label>
+          <label>
+            Local de armazenamento
+            <input list="stock-locations" value={stockEntryForm.location} onChange={(event) => setStockEntryForm({ ...stockEntryForm, location: event.target.value })} />
+          </label>
+          <label className="stock-field-full">
+            Observação
+            <input value={stockEntryForm.note} onChange={(event) => setStockEntryForm({ ...stockEntryForm, note: event.target.value })} placeholder="Nota, compra ou ajuste de entrada" />
+          </label>
+          <label>
+            Anexo da nota fiscal
+            <input type="file" onChange={(event) => setStockEntryForm({ ...stockEntryForm, invoiceFileName: event.target.files?.[0]?.name || "" })} />
+          </label>
+          <div className="stock-modal-footer">
+            <button className="secondary" type="button" onClick={closeStockModal}>Cancelar</button>
+            <button className="primary" type="submit">Salvar entrada</button>
+          </div>
+        </form>
+      </StockModal>
+    );
+  }
+
+  function renderStockExitModal() {
+    const item = selectedStockModalItem(stockExitForm);
+    const compatibleUnits = compatibleUnitsFor(item?.unit || "g");
+    return (
+      <StockModal title="Nova saída">
+        <form className="stock-form-grid stock-modal-form" onSubmit={saveStockExit}>
+          <label>
+            Produto
+            <select value={stockExitForm.itemId} onChange={(event) => {
+              const selected = stockItemsView.find((currentItem) => currentItem.id === event.target.value);
+              setStockExitForm({ ...stockExitForm, itemId: event.target.value, quantityUnit: compatibleUnitsFor(selected?.unit || "g")[0] });
+            }}>
+              <option value="">Selecione</option>
+              {productOptions()}
+            </select>
+          </label>
+          <label>
+            Quantidade
+            <input type="number" step="0.001" value={stockExitForm.quantity} onChange={(event) => setStockExitForm({ ...stockExitForm, quantity: event.target.value })} />
+          </label>
+          <label>
+            Unidade
+            <select value={stockExitForm.quantityUnit} onChange={(event) => setStockExitForm({ ...stockExitForm, quantityUnit: event.target.value })}>
+              {compatibleUnits.map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}
+            </select>
+          </label>
+          <label>
+            Motivo da saída
+            <select value={stockExitForm.reason} onChange={(event) => setStockExitForm({ ...stockExitForm, reason: event.target.value })}>
+              {["Produção", "Venda", "Transferência", "Consumo interno", "Descarte", "Ajuste"].map((reason) => <option key={reason}>{reason}</option>)}
+            </select>
+          </label>
+          <label>
+            Local de origem
+            <select value={stockExitForm.location} onChange={(event) => setStockExitForm({ ...stockExitForm, location: event.target.value })}>
+              {stockLocations.map((location) => <option key={location}>{location}</option>)}
+            </select>
+          </label>
+          <label className="stock-field-full">
+            Observação
+            <input value={stockExitForm.note} onChange={(event) => setStockExitForm({ ...stockExitForm, note: event.target.value })} placeholder="Justificativa operacional" />
+          </label>
+          <div className="stock-modal-footer">
+            <button className="secondary" type="button" onClick={closeStockModal}>Cancelar</button>
+            <button className="primary" type="submit">Registrar saída</button>
+          </div>
+        </form>
+      </StockModal>
+    );
+  }
+
+  function renderStockTransferModal() {
+    const item = selectedStockModalItem(stockTransferForm);
+    const compatibleUnits = compatibleUnitsFor(item?.unit || "g");
+    return (
+      <StockModal title="Transferir entre locais">
+        <form className="stock-form-grid stock-modal-form" onSubmit={saveStockTransfer}>
+          <label>
+            Produto
+            <select value={stockTransferForm.itemId} onChange={(event) => {
+              const selected = stockItemsView.find((currentItem) => currentItem.id === event.target.value);
+              setStockTransferForm({ ...stockTransferForm, itemId: event.target.value, quantityUnit: compatibleUnitsFor(selected?.unit || "g")[0] });
+            }}>
+              <option value="">Selecione</option>
+              {productOptions()}
+            </select>
+          </label>
+          <label>
+            Quantidade
+            <input type="number" step="0.001" value={stockTransferForm.quantity} onChange={(event) => setStockTransferForm({ ...stockTransferForm, quantity: event.target.value })} />
+          </label>
+          <label>
+            Unidade
+            <select value={stockTransferForm.quantityUnit} onChange={(event) => setStockTransferForm({ ...stockTransferForm, quantityUnit: event.target.value })}>
+              {compatibleUnits.map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}
+            </select>
+          </label>
+          <label>
+            Local origem
+            <select value={stockTransferForm.fromLocation} onChange={(event) => setStockTransferForm({ ...stockTransferForm, fromLocation: event.target.value })}>
+              {stockLocations.map((location) => <option key={location}>{location}</option>)}
+            </select>
+          </label>
+          <label>
+            Local destino
+            <input list="stock-locations" value={stockTransferForm.toLocation} onChange={(event) => setStockTransferForm({ ...stockTransferForm, toLocation: event.target.value })} />
+          </label>
+          <label className="stock-field-full">
+            Observação
+            <input value={stockTransferForm.note} onChange={(event) => setStockTransferForm({ ...stockTransferForm, note: event.target.value })} />
+          </label>
+          <div className="stock-modal-footer">
+            <button className="secondary" type="button" onClick={closeStockModal}>Cancelar</button>
+            <button className="primary" type="submit">Transferir</button>
+          </div>
+        </form>
+      </StockModal>
+    );
+  }
+
+  function renderStockInventoryModal() {
+    const item = selectedStockModalItem(stockInventoryForm);
+    const compatibleUnits = compatibleUnitsFor(item?.unit || "g");
+    const expected = stockLots
+      .filter((lot) => lot.itemId === stockInventoryForm.itemId && lot.location === stockInventoryForm.location)
+      .reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
+    const counted = toBaseUnit(stockInventoryForm.countedQuantity, stockInventoryForm.quantityUnit);
+    const difference = stockInventoryForm.countedQuantity ? counted.quantity - expected : 0;
+    return (
+      <StockModal title="Inventário">
+        <form className="stock-form-grid stock-modal-form" onSubmit={saveStockInventory}>
+          <label>
+            Produto
+            <select value={stockInventoryForm.itemId} onChange={(event) => {
+              const selected = stockItemsView.find((currentItem) => currentItem.id === event.target.value);
+              setStockInventoryForm({ ...stockInventoryForm, itemId: event.target.value, quantityUnit: compatibleUnitsFor(selected?.unit || "g")[0] });
+            }}>
+              <option value="">Selecione</option>
+              {productOptions()}
+            </select>
+          </label>
+          <label>
+            Local
+            <select value={stockInventoryForm.location} onChange={(event) => setStockInventoryForm({ ...stockInventoryForm, location: event.target.value })}>
+              {stockLocations.map((location) => <option key={location}>{location}</option>)}
+            </select>
+          </label>
+          <label>
+            Estoque esperado
+            <input value={formatStockDisplay(expected, item?.stockUnit)} disabled />
+          </label>
+          <label>
+            Quantidade contada
+            <input type="number" step="0.001" value={stockInventoryForm.countedQuantity} onChange={(event) => setStockInventoryForm({ ...stockInventoryForm, countedQuantity: event.target.value })} />
+          </label>
+          <label>
+            Unidade
+            <select value={stockInventoryForm.quantityUnit} onChange={(event) => setStockInventoryForm({ ...stockInventoryForm, quantityUnit: event.target.value })}>
+              {compatibleUnits.map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}
+            </select>
+          </label>
+          <label>
+            Diferença automática
+            <input value={formatStockDisplay(difference, item?.stockUnit)} disabled />
+          </label>
+          <label>
+            Motivo do ajuste
+            <input value={stockInventoryForm.reason} onChange={(event) => setStockInventoryForm({ ...stockInventoryForm, reason: event.target.value })} />
+          </label>
+          <label className="stock-field-full">
+            Observação
+            <input value={stockInventoryForm.note} onChange={(event) => setStockInventoryForm({ ...stockInventoryForm, note: event.target.value })} />
+          </label>
+          <div className="stock-modal-footer">
+            <button className="secondary" type="button" onClick={closeStockModal}>Cancelar</button>
+            <button className="primary" type="submit">Salvar inventário</button>
+          </div>
+        </form>
+      </StockModal>
+    );
+  }
+
+  function renderStockLossModal() {
+    const item = selectedStockModalItem(stockLossForm);
+    const compatibleUnits = compatibleUnitsFor(item?.unit || "g");
+    return (
+      <StockModal title="Registrar perda">
+        <form className="stock-form-grid stock-modal-form" onSubmit={saveStockLoss}>
+          <label>
+            Produto
+            <select value={stockLossForm.itemId} onChange={(event) => {
+              const selected = stockItemsView.find((currentItem) => currentItem.id === event.target.value);
+              setStockLossForm({ ...stockLossForm, itemId: event.target.value, quantityUnit: compatibleUnitsFor(selected?.unit || "g")[0] });
+            }}>
+              <option value="">Selecione</option>
+              {productOptions()}
+            </select>
+          </label>
+          <label>
+            Quantidade perdida
+            <input type="number" step="0.001" value={stockLossForm.quantity} onChange={(event) => setStockLossForm({ ...stockLossForm, quantity: event.target.value })} />
+          </label>
+          <label>
+            Unidade
+            <select value={stockLossForm.quantityUnit} onChange={(event) => setStockLossForm({ ...stockLossForm, quantityUnit: event.target.value })}>
+              {compatibleUnits.map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}
+            </select>
+          </label>
+          <label>
+            Motivo
+            <select value={stockLossForm.reason} onChange={(event) => setStockLossForm({ ...stockLossForm, reason: event.target.value })}>
+              {["Vencimento", "Quebra", "Contaminação", "Erro de produção", "Produção excessiva", "Sobra", "Outros"].map((reason) => <option key={reason}>{reason}</option>)}
+            </select>
+          </label>
+          <label>
+            Responsável
+            <input value={stockLossForm.responsible} onChange={(event) => setStockLossForm({ ...stockLossForm, responsible: event.target.value })} placeholder={currentOperatorName()} />
+          </label>
+          <label>
+            Local
+            <select value={stockLossForm.location} onChange={(event) => setStockLossForm({ ...stockLossForm, location: event.target.value })}>
+              {stockLocations.map((location) => <option key={location}>{location}</option>)}
+            </select>
+          </label>
+          <label>
+            Foto
+            <input type="file" accept="image/*" onChange={(event) => setStockLossForm({ ...stockLossForm, photoFileName: event.target.files?.[0]?.name || "" })} />
+          </label>
+          <label className="stock-field-full">
+            Observação
+            <input value={stockLossForm.note} onChange={(event) => setStockLossForm({ ...stockLossForm, note: event.target.value })} />
+          </label>
+          <div className="stock-modal-footer">
+            <button className="secondary" type="button" onClick={closeStockModal}>Cancelar</button>
+            <button className="primary" type="submit">Registrar descarte</button>
+          </div>
+        </form>
+      </StockModal>
+    );
+  }
+
+  function renderStockMovementsModal() {
+    return (
+      <StockModal title="Histórico de movimentações">
+        <div className="stock-table-wrap stock-modal-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Data e hora</th>
+                <th>Produto</th>
+                <th>Tipo</th>
+                <th>Quantidade</th>
+                <th>Origem</th>
+                <th>Destino</th>
+                <th>Usuário</th>
+                <th>Observação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockMovements.length === 0 ? (
+                <tr><td colSpan="8">Nenhuma movimentação registrada.</td></tr>
+              ) : stockMovements.map((movement) => (
+                <tr key={movement.id}>
+                  <td>{movement.createdAt}</td>
+                  <td>{movement.itemName}</td>
+                  <td>{movement.type}</td>
+                  <td>{formatStockDisplay(movement.quantity, movement.unit)}</td>
+                  <td>{movement.fromLocation || "--"}</td>
+                  <td>{movement.toLocation || "--"}</td>
+                  <td>{movement.userName}</td>
+                  <td>{movement.note || movement.reason || "--"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </StockModal>
+    );
+  }
+
+  function renderActiveStockModal() {
+    if (stockModal === "product") return renderStockProductModal();
+    if (stockModal === "entry") return renderStockEntryModal();
+    if (stockModal === "exit") return renderStockExitModal();
+    if (stockModal === "transfer") return renderStockTransferModal();
+    if (stockModal === "inventory") return renderStockInventoryModal();
+    if (stockModal === "loss") return renderStockLossModal();
+    if (stockModal === "movements") return renderStockMovementsModal();
+    return null;
+  }
+
   function renderStockEstoque() {
     return (
-      <section className="module-content stock-wide">
-        <div className="stock-title-row">
-          <div>
-            <h2>Estoque</h2>
-            <p className="stock-help">Extrato dos itens de estoque e seus vencimentos.</p>
+      <>
+        <section className="module-content stock-wide">
+          <div className="stock-title-row">
+            <div>
+              <h2>Gestão de estoque</h2>
+              <p className="stock-help">Controle produtos, entradas, saídas, transferências, inventário, validade e perdas financeiras.</p>
+            </div>
+            <div className="stock-title-actions">
+              <button className="primary" type="button" onClick={() => openStockModal("product")}>Novo Produto</button>
+              <button className="primary" type="button" onClick={() => openStockModal("entry")}>Nova Entrada</button>
+              <button className="secondary" type="button" onClick={() => openStockModal("exit")}>Nova Saída</button>
+              <button className="secondary" type="button" onClick={() => openStockModal("transfer")}>Transferir</button>
+              <button className="secondary" type="button" onClick={() => openStockModal("inventory")}>Inventário</button>
+              <button className="danger" type="button" onClick={() => openStockModal("loss")}>Registrar Perda</button>
+              <button className="secondary" type="button" onClick={() => openStockModal("movements")}>Ver Movimentações</button>
+            </div>
           </div>
-          <label className="stock-alert-label">
-            Alerta de vencimento em até
-            <input
-              type="number"
-              value={stockAlertDays}
-              onChange={(event) => setStockAlertDays(Number(event.target.value || 0))}
-            />
-            dias
-          </label>
-        </div>
+        </section>
 
-        {stockLots.length === 0 ? (
-          <div className="module-placeholder">
-            <strong>Nenhuma entrada registrada</strong>
-            <p>Registre uma entrada de estoque para acompanhar validade e quantidade.</p>
+        <section className="module-content stock-wide">
+          <div className="acomp-grid">
+            <MiniDashCard title="Valor total em estoque" value={money(stockDashboard.totalValue)} detail="Saldo financeiro atual" />
+            <MiniDashCard title="Estoque mínimo" value={stockDashboard.lowStock} detail="Produtos em atenção/crítico" warning />
+            <MiniDashCard title="Próx. vencimento" value={stockDashboard.expiring} detail={`Até ${stockAlertDays} dia(s)`} warning />
+            <MiniDashCard title="Vencidos" value={stockDashboard.expired} detail="Produtos vencidos" danger />
+            <MiniDashCard title="Sem movimento" value={stockDashboard.stale} detail="Há 30 dias ou mais" />
+            <MiniDashCard title="Perdas do mês" value={money(stockDashboard.lossMonth)} detail="Descartes registrados" danger />
           </div>
-        ) : (
-          <div className="stock-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Quantidade atual</th>
-                  <th>Quantidade inicial</th>
-                  <th>Entrada original</th>
-                  <th>Validade</th>
-                  <th>Status</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stockLots.map((lot) => {
-                  const item = stockItemsView.find((currentItem) => currentItem.id === lot.itemId);
-                  const days = diffDays(lot.expiryDate);
+        </section>
 
-                  return (
-                    <tr key={lot.id} className={days < 0 ? "stock-expired-row" : days <= stockAlertDays ? "stock-warning-row" : ""}>
-                      <td><strong>{item?.name || "--"}</strong></td>
-                      <td>{formatStockDisplay(lot.quantity, lot.unit)}</td>
-                      <td>{formatStockDisplay(lot.initialQuantity, lot.unit)}</td>
-                      <td>{formatQuantity(lot.inputQuantity)} {unitLabel(lot.inputUnit)}</td>
-                      <td>{formatDate(lot.expiryDate)}</td>
-                      <td>{days < 0 ? "Vencido" : days <= stockAlertDays ? `Vence em ${days} dia(s)` : "OK"}</td>
+        <section className="module-content stock-wide">
+          <div className="stock-filter-grid">
+            <input value={stockSearch} onChange={(event) => setStockSearch(event.target.value)} placeholder="Buscar produto, código ou categoria..." />
+            <select value={stockFilters.category} onChange={(event) => setStockFilters({ ...stockFilters, category: event.target.value })}>
+              <option>Todos</option>
+              {stockCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+            <select value={stockFilters.supplier} onChange={(event) => setStockFilters({ ...stockFilters, supplier: event.target.value })}>
+              <option>Todos</option>
+              {stockSuppliers.map((supplier) => <option key={supplier}>{supplier}</option>)}
+            </select>
+            <select value={stockFilters.location} onChange={(event) => setStockFilters({ ...stockFilters, location: event.target.value })}>
+              <option>Todos</option>
+              {stockLocations.map((location) => <option key={location}>{location}</option>)}
+            </select>
+            <select value={stockFilters.status} onChange={(event) => setStockFilters({ ...stockFilters, status: event.target.value })}>
+              {["Todos", "Normal", "Atenção", "Crítico", "Vencido"].map((status) => <option key={status}>{status}</option>)}
+            </select>
+            <label className="stock-alert-label">
+              Vencimento
+              <input type="number" value={stockAlertDays} onChange={(event) => setStockAlertDays(Number(event.target.value || 0))} />
+              dias
+            </label>
+          </div>
+
+          <div className="stock-quick-filters">
+            {[
+              ["todos", "Todos"],
+              ["baixo", "Estoque baixo"],
+              ["vencendo", "Próximo do vencimento"],
+              ["vencidos", "Vencidos"],
+              ["sem-movimento", "Sem movimentação"]
+            ].map(([id, label]) => (
+              <button key={id} className={stockQuickFilter === id ? "unit-btn-stock active" : "unit-btn-stock"} type="button" onClick={() => setStockQuickFilter(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="module-content stock-wide">
+          <datalist id="stock-suppliers">
+            {stockSuppliers.map((supplier) => <option key={supplier} value={supplier} />)}
+          </datalist>
+          <datalist id="stock-locations">
+            {stockLocations.map((location) => <option key={location} value={location} />)}
+          </datalist>
+
+          {filteredStockItems.length === 0 ? (
+            <div className="module-placeholder">
+              <strong>Nenhum produto encontrado</strong>
+              <p>Use Novo Produto para cadastrar ou ajuste os filtros.</p>
+            </div>
+          ) : (
+            <div className="stock-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produto</th>
+                    <th>Categoria</th>
+                    <th>Estoque atual</th>
+                    <th>Estoque mínimo</th>
+                    <th>Unidade</th>
+                    <th>Local</th>
+                    <th>Próxima validade</th>
+                    <th>Custo unitário</th>
+                    <th>Valor total</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredStockItems.map((item) => (
+                    <tr key={item.id} className={item.status === "Vencido" ? "stock-expired-row" : item.status === "Atenção" || item.status === "Crítico" ? "stock-warning-row" : item.totalStock <= 0 ? "stock-zero-row" : ""}>
+                      <td>
+                        <strong>{item.name}</strong>
+                        <small className="stock-row-note">{item.internalCode || item.barcode || "Sem código"}</small>
+                      </td>
+                      <td>{item.category}</td>
+                      <td>{formatStockDisplay(item.totalStock, item.stockUnit)}</td>
+                      <td>{formatStockDisplay(item.minStock, item.stockUnit)}</td>
+                      <td>{unitLabel(item.unit)}</td>
+                      <td>{item.mainLocation}</td>
+                      <td>{item.nextExpiry ? formatDate(item.nextExpiry) : "--"}</td>
+                      <td>{money(item.unitCost)}</td>
+                      <td>{money(item.totalValue)}</td>
+                      <td><span className={`stock-status-badge status-${item.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`}>{item.status}</span></td>
                       <td>
                         <div className="table-actions">
-                          <button className="secondary" type="button" onClick={() => editStockLot(lot)}>Editar</button>
-                          <button className="danger" type="button" onClick={() => deleteStockLot(lot.id)}>Excluir</button>
+                          <button className="secondary" type="button" onClick={() => openStockModal("product", item)}>Editar</button>
+                          <button className="danger" type="button" onClick={() => inactivateStockItem(item.id)}>Inativar</button>
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {renderActiveStockModal()}
+      </>
     );
   }
 
@@ -1468,7 +2514,6 @@ export default function App() {
     const items = [
       { id: "cadastro", label: "Cadastro" },
       { id: "itens", label: "Itens cadastrados" },
-      { id: "lancamento", label: "Lançamento de estoque" },
       { id: "estoque", label: "Estoque" },
       { id: "acompanhamento", label: "Acompanhamento (dashboard)" }
     ];
@@ -1477,7 +2522,6 @@ export default function App() {
       <OperationalModuleLayout items={items} page={stockPage} onNavigate={setStockPage}>
         {stockPage === "cadastro" && renderStockCadastro()}
         {stockPage === "itens" && renderStockItens()}
-        {stockPage === "lancamento" && renderStockLancamento()}
         {stockPage === "estoque" && renderStockEstoque()}
         {stockPage === "acompanhamento" && renderAcompanhamentoEstoque()}
       </OperationalModuleLayout>
@@ -2314,56 +3358,77 @@ export default function App() {
     const dash = getLabelsDash();
     const selectedItem = getLabelItem();
     const compatibleUnits = compatibleUnitsFor(selectedItem?.unit || "g");
+    const isLabelsDash = labelPage === "dash";
 
     return (
       <section className="stock-workspace labels-workspace">
         <aside className="stock-sidebar">
-          <button className="stock-nav active">Gerar etiquetas</button>
+          <button
+            className={labelPage === "operacional" ? "stock-nav active" : "stock-nav"}
+            type="button"
+            onClick={() => setLabelPage("operacional")}
+          >
+            Operacional
+          </button>
+          <button
+            className={isLabelsDash ? "stock-nav active" : "stock-nav"}
+            type="button"
+            onClick={() => setLabelPage("dash")}
+          >
+            Dash
+          </button>
         </aside>
 
         <main className="stock-main">
-          <section className="module-content stock-wide">
-            <h2>Etiquetas</h2>
-            <p className="stock-help">Gere etiquetas com QRCode. A impressão não baixa estoque; a baixa acontece apenas na leitura do QRCode.</p>
+          {isLabelsDash ? (
+            <section className="module-content stock-wide">
+              <h2>Dash de etiquetas</h2>
+              <p className="stock-help">Indicadores de emissão, consumo, vencimento e descarte.</p>
 
-            <div className="acomp-grid labels-dash">
-              <div className="acomp-card">
-                <span>Etiquetas emitidas</span>
-                <strong>{dash.total}</strong>
-                <small>Histórico total</small>
+              <div className="acomp-grid labels-dash">
+                <div className="acomp-card">
+                  <span>Etiquetas emitidas</span>
+                  <strong>{dash.total}</strong>
+                  <small>Histórico total</small>
+                </div>
+                <div className="acomp-card">
+                  <span>Disponíveis</span>
+                  <strong>{dash.available}</strong>
+                  <small>Aguardando consumo</small>
+                </div>
+                <div className="acomp-card">
+                  <span>Consumidas</span>
+                  <strong>{dash.consumed}</strong>
+                  <small>Baixadas por QRCode</small>
+                </div>
+                <div className="acomp-card warning">
+                  <span>Próx. vencimento</span>
+                  <strong>{dash.expiring}</strong>
+                  <small>Até {stockAlertDays} dia(s)</small>
+                </div>
+                <div className="acomp-card danger-card">
+                  <span>Vencidas</span>
+                  <strong>{dash.expired}</strong>
+                  <small>Etiquetas vencidas</small>
+                </div>
+                <div className="acomp-card danger-card">
+                  <span>Descartadas</span>
+                  <strong>{dash.discarded}</strong>
+                  <small>Perda/descarte</small>
+                </div>
               </div>
-              <div className="acomp-card">
-                <span>Disponíveis</span>
-                <strong>{dash.available}</strong>
-                <small>Aguardando consumo</small>
-              </div>
-              <div className="acomp-card">
-                <span>Consumidas</span>
-                <strong>{dash.consumed}</strong>
-                <small>Baixadas por QRCode</small>
-              </div>
-              <div className="acomp-card warning">
-                <span>Próx. vencimento</span>
-                <strong>{dash.expiring}</strong>
-                <small>Até {stockAlertDays} dia(s)</small>
-              </div>
-              <div className="acomp-card danger-card">
-                <span>Vencidas</span>
-                <strong>{dash.expired}</strong>
-                <small>Etiquetas vencidas</small>
-              </div>
-              <div className="acomp-card danger-card">
-                <span>Descartadas</span>
-                <strong>{dash.discarded}</strong>
-                <small>Perda/descarte</small>
-              </div>
-            </div>
-          </section>
+            </section>
+          ) : (
+            <>
+              <section className="module-content stock-wide">
+                <h2>Etiquetas</h2>
+                <p className="stock-help">Gere, imprima e acione etiquetas por QRCode.</p>
+              </section>
 
-          <section className="module-content stock-wide">
-            <h2>Gerar etiqueta</h2>
+              <section className="module-content stock-wide">
+                <h2>Gerar etiqueta</h2>
 
-            <form className="stock-form-grid" onSubmit={saveLabels}>
+                <form className="stock-form-grid" onSubmit={saveLabels}>
               <label>
                 Produto / Item
                 <select
@@ -2438,15 +3503,15 @@ export default function App() {
                 />
               </label>
 
-              <button className="primary" type="submit">Gerar etiquetas com QRCode</button>
-            </form>
-          </section>
+                  <button className="primary" type="submit">Gerar etiquetas com QRCode</button>
+                </form>
+              </section>
 
-          <section className="module-content stock-wide">
-            <h2>Leitura de QRCode / Ação da etiqueta</h2>
-            <p className="stock-help">Ao abrir o QRCode, escolha Produção para mesa, Descarte ou Sair. A baixa no estoque acontece apenas em Produção para mesa ou Descarte.</p>
+              <section className="module-content stock-wide">
+                <h2>Leitura de QRCode / Ação da etiqueta</h2>
+                <p className="stock-help">Ao abrir o QRCode, escolha Produção para mesa, Descarte ou Sair. A baixa no estoque acontece apenas em Produção para mesa ou Descarte.</p>
 
-            <form className="stock-form-grid" onSubmit={consumeLabelByQr}>
+                <form className="stock-form-grid" onSubmit={consumeLabelByQr}>
               <label>
                 Código da etiqueta / QRCode
                 <input value={labelConsumeCode} onChange={(event) => setLabelConsumeCode(event.target.value)} placeholder="Ex: ETQ-..." />
@@ -2470,18 +3535,18 @@ export default function App() {
                 </select>
               </label>
 
-              <button className="primary" type="submit">Abrir ação da etiqueta</button>
-            </form>
-          </section>
+                  <button className="primary" type="submit">Abrir ação da etiqueta</button>
+                </form>
+              </section>
 
-          <section className="module-content stock-wide">
-            <div className="stock-title-row">
-              <div>
-                <h2>Etiquetas geradas</h2>
-                <p className="stock-help">Histórico das etiquetas emitidas. Imprimir não baixa estoque; baixa somente via leitura do QRCode.</p>
-              </div>
-              <button className="secondary" onClick={printLabels}>Imprimir térmica</button>
-            </div>
+              <section className="module-content stock-wide">
+                <div className="stock-title-row">
+                  <div>
+                    <h2>Etiquetas geradas</h2>
+                    <p className="stock-help">Histórico das etiquetas emitidas. Imprimir não baixa estoque; baixa somente via leitura do QRCode.</p>
+                  </div>
+                  <button className="secondary" onClick={printLabels}>Imprimir térmica</button>
+                </div>
 
             {labelsHistory.length === 0 ? (
               <div className="module-placeholder">
@@ -2529,7 +3594,9 @@ export default function App() {
                 })}
               </div>
             )}
-          </section>
+              </section>
+            </>
+          )}
         </main>
       </section>
     );
