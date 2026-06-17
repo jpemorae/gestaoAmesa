@@ -161,6 +161,12 @@ select:focus {
   font-weight: 900;
 }
 
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .work-page {
   min-height: 100vh;
   display: grid;

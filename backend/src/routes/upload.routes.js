@@ -1,10 +1,10 @@
 import { Router } from "express";
-import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
+import { uploadRateLimiter } from "../middleware/rateLimit.js";
 import { uploadEvidence, uploadLogo } from "../controllers/upload.controller.js";
+import { evidenceUpload, logoUpload } from "../utils/uploadSecurity.js";
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
 router.use(requireAuth);
-router.post("/evidence", upload.single("file"), uploadEvidence);
-router.post("/logo", upload.single("file"), uploadLogo);
+router.post("/evidence", uploadRateLimiter, evidenceUpload.single("file"), uploadEvidence);
+router.post("/logo", uploadRateLimiter, logoUpload.single("file"), uploadLogo);
 export default router;

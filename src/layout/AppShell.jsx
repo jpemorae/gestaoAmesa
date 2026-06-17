@@ -26,7 +26,7 @@ export function AppShell({ loggedUser, page, onNavigate, onLogout, children }) {
 
         {isPlatformAdmin && (
           <button className={page === "users" ? "nav active" : "nav"} onClick={() => onNavigate("users")}>
-            Cadastrar usuários
+            Usuários master
           </button>
         )}
       </aside>

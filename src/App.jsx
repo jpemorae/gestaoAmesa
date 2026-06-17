@@ -130,6 +130,7 @@ export default function App() {
   const [stockSearch, setStockSearch] = useState("");
   const [stockCategoryName, setStockCategoryName] = useState("");
   const [stockAlertDays, setStockAlertDays] = useState(2);
+  const [editingStockItemId, setEditingStockItemId] = useState(null);
   const [stockItemForm, setStockItemForm] = useState({
     name: "",
     type: "Produto",
@@ -155,6 +156,7 @@ export default function App() {
     quantityUnit: "g",
     expiryDate: ""
   });
+  const [editingStockLotId, setEditingStockLotId] = useState(null);
 
   const [labelForm, setLabelForm] = useState({
     itemId: "",
@@ -222,6 +224,10 @@ export default function App() {
       .filter((client) => client.financialStatus !== "Em dia")
       .reduce((sum, client) => sum + Number(client.monthlyFee || 0), 0),
     [clients]
+  );
+  const platformUsers = useMemo(
+    () => users.filter((user) => user.userType === "platform" || (!user.userType && !user.companyId)),
+    [users]
   );
 
   useEffect(() => {
@@ -396,10 +402,16 @@ export default function App() {
     }
 
     if (editingUserId) {
-      setUsers(users.map((user) => (user.id === editingUserId ? { ...user, ...userForm } : user)));
+      const updatedUser = {
+        ...userForm,
+        userType: "platform",
+        companyId: null
+      };
+
+      setUsers(users.map((user) => (user.id === editingUserId ? { ...user, ...updatedUser } : user)));
 
       if (loggedUser?.id === editingUserId) {
-        setLoggedUser({ ...loggedUser, ...userForm });
+        setLoggedUser({ ...loggedUser, ...updatedUser });
       }
 
       setEditingUserId(null);
@@ -411,6 +423,8 @@ export default function App() {
       {
         id: crypto.randomUUID(),
         ...userForm,
+        userType: "platform",
+        companyId: null,
         createdAt: new Date().toLocaleDateString("pt-BR")
       },
       ...users
@@ -488,6 +502,30 @@ export default function App() {
     if (!stockItemForm.name.trim()) return alert("Informe o nome.");
     if (!stockItemForm.categoryId) return alert("Selecione uma categoria.");
 
+    if (editingStockItemId) {
+      const currentItem = stockItems.find((item) => item.id === editingStockItemId);
+      const hasStockLots = stockLots.some((lot) => lot.itemId === editingStockItemId);
+
+      if (hasStockLots && baseUnitFor(currentItem?.unit) !== baseUnitFor(stockItemForm.unit)) {
+        return alert("Este produto possui estoque lançado. Mantenha uma unidade compatível para preservar os cálculos.");
+      }
+
+      setStockItems(stockItems.map((item) =>
+        item.id === editingStockItemId
+          ? {
+              ...item,
+              ...stockItemForm,
+              name: stockItemForm.name.trim(),
+              defaultQuantity: normalizeDecimal(stockItemForm.defaultQuantity),
+              defaultValidityDays: Number(stockItemForm.defaultValidityDays || 0)
+            }
+          : item
+      ));
+
+      resetStockItemForm();
+      return;
+    }
+
     const newItem = {
       id: crypto.randomUUID(),
       ...stockItemForm,
@@ -515,21 +553,43 @@ export default function App() {
           inputUnit: stockItemForm.unit,
           expiryDate,
           createdAt: new Date().toLocaleString("pt-BR"),
-      clientName: getCurrentClient()?.fantasyName || getCurrentClient()?.companyName || "Cliente",
-      clientLogo: getCurrentClient()?.logo || "",
+          clientName: getCurrentClient()?.fantasyName || getCurrentClient()?.companyName || "Cliente",
+          clientLogo: getCurrentClient()?.logo || "",
           origin: "Cadastro inicial"
         },
         ...stockLots
       ]);
     }
 
+    resetStockItemForm({
+      type: stockItemForm.type,
+      categoryId: stockItemForm.categoryId
+    });
+  }
+
+  function resetStockItemForm(overrides = {}) {
     setStockItemForm({
       name: "",
-      type: stockItemForm.type,
-      categoryId: stockItemForm.categoryId,
+      type: overrides.type || "Produto",
+      categoryId: overrides.categoryId || "",
       defaultQuantity: "",
       unit: "kg",
       defaultValidityDays: 3
+    });
+    setEditingStockItemId(null);
+  }
+
+  function editStockItem(item) {
+    setEditingStockItemId(item.id);
+    setStockCadastroType("produto");
+    setStockPage("cadastro");
+    setStockItemForm({
+      name: item.name || "",
+      type: item.type || "Produto",
+      categoryId: item.categoryId || "",
+      defaultQuantity: item.defaultQuantity || "",
+      unit: item.unit || "kg",
+      defaultValidityDays: item.defaultValidityDays ?? 3
     });
   }
 
@@ -551,6 +611,25 @@ export default function App() {
       return;
     }
 
+    if (editingStockLotId) {
+      setStockLots(stockLots.map((lot) =>
+        lot.id === editingStockLotId
+          ? {
+              ...lot,
+              itemId: stockEntryForm.itemId,
+              quantity: converted.quantity,
+              initialQuantity: converted.quantity,
+              unit: converted.unit,
+              inputQuantity: normalizeDecimal(stockEntryForm.quantity),
+              inputUnit: stockEntryForm.quantityUnit,
+              expiryDate: stockEntryForm.expiryDate
+            }
+          : lot
+      ));
+      resetStockEntryForm();
+      return;
+    }
+
     setStockLots([
       {
         id: crypto.randomUUID(),
@@ -566,12 +645,28 @@ export default function App() {
       ...stockLots
     ]);
 
+    resetStockEntryForm();
+  }
+
+  function resetStockEntryForm() {
     setStockEntryForm({ itemId: "", quantity: "", quantityUnit: "g", expiryDate: "" });
+    setEditingStockLotId(null);
   }
 
   function deleteStockLot(lotId) {
     if (!confirm("Deseja excluir este lançamento de estoque?")) return;
     setStockLots(stockLots.filter((lot) => lot.id !== lotId));
+  }
+
+  function editStockLot(lot) {
+    setEditingStockLotId(lot.id);
+    setStockPage("lancamento");
+    setStockEntryForm({
+      itemId: lot.itemId || "",
+      quantity: lot.inputQuantity ?? lot.quantity ?? "",
+      quantityUnit: lot.inputUnit || lot.unit || "g",
+      expiryDate: lot.expiryDate || ""
+    });
   }
 
 
@@ -982,7 +1077,7 @@ export default function App() {
 
         {stockCadastroType === "produto" && (
           <section className="module-content stock-wide">
-            <h2>Cadastrar produto ou item</h2>
+            <h2>{editingStockItemId ? "Editar produto ou item" : "Cadastrar produto ou item"}</h2>
             <p className="stock-help">Use este cadastro para tudo que terá controle de quantidade, peso, unidade e validade.</p>
 
             <form className="stock-form-grid" onSubmit={saveStockItem}>
@@ -1055,7 +1150,14 @@ export default function App() {
                 />
               </label>
 
-              <button className="primary" type="submit">Cadastrar produto/item</button>
+              <button className="primary" type="submit">
+                {editingStockItemId ? "Salvar alterações" : "Cadastrar produto/item"}
+              </button>
+              {editingStockItemId && (
+                <button className="secondary" type="button" onClick={() => resetStockItemForm()}>
+                  Cancelar edição
+                </button>
+              )}
             </form>
 
             <div className="category-mini-box">
@@ -1117,6 +1219,7 @@ export default function App() {
                   <th>Padrão/Horário</th>
                   <th>Unidade/Frequência</th>
                   <th>Estoque atual/Repetição</th>
+                  <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -1136,6 +1239,13 @@ export default function App() {
                         ? item.repeats === "Sim" ? `${item.repeatQuantity || 0} vez(es)` : "Não repete"
                         : <strong>{formatStockDisplay(item.totalStock, item.stockUnit)}</strong>}
                     </td>
+                    <td>
+                      {item.type === "Produto" || item.type === "Item" ? (
+                        <div className="table-actions">
+                          <button className="secondary" type="button" onClick={() => editStockItem(item)}>Editar</button>
+                        </div>
+                      ) : "--"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1149,7 +1259,7 @@ export default function App() {
   function renderStockLancamento() {
     return (
       <section className="module-content stock-wide">
-        <h2>Lançamento de estoque</h2>
+        <h2>{editingStockLotId ? "Editar item de estoque" : "Lançamento de estoque"}</h2>
         <p className="stock-help">Registre a entrada dos itens em estoque.</p>
 
         <form className="stock-form-grid" onSubmit={saveStockEntry}>
@@ -1206,7 +1316,14 @@ export default function App() {
             />
           </label>
 
-          <button className="primary" type="submit">Registrar entrada</button>
+          <button className="primary" type="submit">
+            {editingStockLotId ? "Salvar alterações" : "Registrar entrada"}
+          </button>
+          {editingStockLotId && (
+            <button className="secondary" type="button" onClick={resetStockEntryForm}>
+              Cancelar edição
+            </button>
+          )}
         </form>
       </section>
     );
@@ -1263,7 +1380,12 @@ export default function App() {
                       <td>{formatQuantity(lot.inputQuantity)} {unitLabel(lot.inputUnit)}</td>
                       <td>{formatDate(lot.expiryDate)}</td>
                       <td>{days < 0 ? "Vencido" : days <= stockAlertDays ? `Vence em ${days} dia(s)` : "OK"}</td>
-                      <td><button className="danger" onClick={() => deleteStockLot(lot.id)}>Excluir</button></td>
+                      <td>
+                        <div className="table-actions">
+                          <button className="secondary" type="button" onClick={() => editStockLot(lot)}>Editar</button>
+                          <button className="danger" type="button" onClick={() => deleteStockLot(lot.id)}>Excluir</button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -2644,7 +2766,7 @@ export default function App() {
           <PlatformUsersPage
             editingUserId={editingUserId}
             userForm={userForm}
-            users={users}
+            users={platformUsers}
             onCancelEdit={() => {
               setEditingUserId(null);
               setUserForm(emptyUserForm);

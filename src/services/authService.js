@@ -1,5 +1,13 @@
 import { initialUsers, STORAGE_KEYS } from "../data/mockData";
 
+function normalizeUser(user) {
+  if (!user?.userType && !user?.companyId) {
+    return { ...user, userType: "platform", companyId: null };
+  }
+
+  return user;
+}
+
 export function getInitialPageForUser(user) {
   if (!user) return "dashboard";
   return user.userType === "client" ? "hub" : "dashboard";
@@ -15,8 +23,10 @@ export function authenticateUser({ email, password }, users = initialUsers, clie
         user.status === "Ativo"
     ) || null;
 
-  if (!user || user.userType !== "client") return user;
-  return clients.some((client) => client.id === user.companyId && client.status === "Ativo") ? user : null;
+  if (!user) return null;
+  const normalizedUser = normalizeUser(user);
+  if (normalizedUser.userType !== "client") return normalizedUser;
+  return clients.some((client) => client.id === normalizedUser.companyId && client.status === "Ativo") ? normalizedUser : null;
 }
 
 export function restoreSession() {
@@ -29,7 +39,7 @@ export function restoreSession() {
   }
 
   try {
-    const user = JSON.parse(savedLoggedUser);
+    const user = normalizeUser(JSON.parse(savedLoggedUser));
     return {
       user,
       isLogged: true,
