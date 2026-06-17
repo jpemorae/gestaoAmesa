@@ -133,6 +133,10 @@ export default function App() {
     loadAppData()
       .then(async (data) => {
         if (!active || !data) return;
+        if (data.setupRequired) {
+          console.warn(data.message || "Persistencia global ainda nao configurada na API.");
+          return;
+        }
         const remoteClients = Array.isArray(data.clients) ? data.clients : [];
         const remoteUsers = Array.isArray(data.users) ? data.users : [];
         const missingClients = clients.filter((client) => !remoteClients.some((remoteClient) => remoteClient.id === client.id));

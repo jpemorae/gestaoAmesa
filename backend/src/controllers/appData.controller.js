@@ -80,18 +80,43 @@ function userPayload(body, existing = null) {
   return row;
 }
 
+function isMissingAppDataTable(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("app_clients") || message.includes("app_users") || message.includes("does not exist");
+}
+
 export async function listAppData(req, res) {
   const { data: clients, error: clientsError } = await supabaseAdmin
     .from("app_clients")
     .select("*")
     .order("created_at", { ascending: false });
-  if (clientsError) return res.status(400).json({ error: clientsError.message });
+  if (clientsError) {
+    if (isMissingAppDataTable(clientsError)) {
+      return res.json({
+        clients: [],
+        users: [],
+        setupRequired: true,
+        message: "Tabelas app_clients/app_users ainda nao existem no banco conectado a API."
+      });
+    }
+    return res.status(400).json({ error: clientsError.message });
+  }
 
   const { data: users, error: usersError } = await supabaseAdmin
     .from("app_users")
     .select("*")
     .order("created_at", { ascending: false });
-  if (usersError) return res.status(400).json({ error: usersError.message });
+  if (usersError) {
+    if (isMissingAppDataTable(usersError)) {
+      return res.json({
+        clients: (clients || []).map(clientFromRow),
+        users: [],
+        setupRequired: true,
+        message: "Tabela app_users ainda nao existe no banco conectado a API."
+      });
+    }
+    return res.status(400).json({ error: usersError.message });
+  }
 
   return res.json({
     clients: (clients || []).map(clientFromRow),
@@ -109,7 +134,12 @@ export async function appLogin(req, res) {
     .eq("status", "Ativo")
     .maybeSingle();
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) {
+    if (isMissingAppDataTable(error)) {
+      return res.status(503).json({ error: "Tabelas app_clients/app_users ainda nao existem no banco conectado a API." });
+    }
+    return res.status(400).json({ error: error.message });
+  }
   if (!user || !verifyPassword(password, user)) {
     return res.status(401).json({ error: "Usuário ou senha inválidos." });
   }
