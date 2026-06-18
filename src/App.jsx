@@ -454,19 +454,24 @@ export default function App() {
   async function handleLogin(event) {
     event.preventDefault();
 
-    let user = null;
+    const fallbackUsers = [
+      ...users,
+      ...initialUsers.filter((initialUser) => !users.some((user) => user.email?.toLowerCase() === initialUser.email.toLowerCase()))
+    ];
+    const fallbackClients = [
+      ...clients,
+      ...initialClients.filter((initialClient) => !clients.some((client) => client.id === initialClient.id))
+    ];
 
-    if (canUseAppDataApi()) {
+    let user = authenticateUser(login, fallbackUsers, fallbackClients);
+
+    if (!user && canUseAppDataApi()) {
       try {
         const data = await loginAppUser(login);
         user = data?.user || null;
       } catch {
         user = null;
       }
-    }
-
-    if (!user) {
-      user = authenticateUser(login, users, clients);
     }
 
     if (!user) {
