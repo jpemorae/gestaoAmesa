@@ -1075,6 +1075,18 @@ export default function App() {
     setEditingStockItemId(null);
   }
 
+  function openStockCadastroAction(type) {
+    setStockPage("cadastro");
+
+    if (type === "product") {
+      resetStockItemForm();
+      setStockCadastroType("produto");
+      return;
+    }
+
+    openStockModal(type);
+  }
+
   function inactivateStockItem(itemId) {
     const hasMovements = stockMovements.some((movement) => movement.itemId === itemId);
     const message = hasMovements
@@ -1782,18 +1794,49 @@ export default function App() {
   }
 
   function renderStockCadastro() {
+    const stockCadastroActions = [
+      { id: "product", title: "Novo produto", detail: "Produto, item, unidade, categoria e custo.", button: "Cadastrar", variant: "primary" },
+      { id: "entry", title: "Nova entrada", detail: "Lote, quantidade, fornecedor, validade e local.", button: "Registrar", variant: "primary" },
+      { id: "exit", title: "Nova saída", detail: "Baixa manual de estoque com motivo.", button: "Dar baixa", variant: "secondary" },
+      { id: "transfer", title: "Transferir", detail: "Movimente saldo entre locais internos.", button: "Transferir", variant: "secondary" },
+      { id: "inventory", title: "Inventário", detail: "Ajuste saldo contado e registre divergências.", button: "Contar", variant: "secondary" },
+      { id: "loss", title: "Registrar perda", detail: "Descarte com motivo, valor e responsável.", button: "Registrar", variant: "danger" },
+      { id: "movements", title: "Movimentações", detail: "Consulte entradas, saídas e ajustes.", button: "Ver histórico", variant: "secondary" }
+    ];
+
     return (
       <>
           <section className="module-content stock-wide">
-            <h2>Cadastro</h2>
-          <p className="stock-help">Cadastre a base de produtos e itens. Quantidade e validade entram na tela Estoque.</p>
-          {renderCadastroSelector()}
+          <div className="stock-title-row">
+            <div>
+              <h2>Cadastro</h2>
+              <p className="stock-help">Central de cadastro e ações manuais do estoque.</p>
+            </div>
+          </div>
+
+          <div className="stock-action-grid">
+            {stockCadastroActions.map((action) => (
+              <article className="stock-action-card" key={action.id}>
+                <div>
+                  <strong>{action.title}</strong>
+                  <small>{action.detail}</small>
+                </div>
+                <button
+                  className={action.variant}
+                  type="button"
+                  onClick={() => openStockCadastroAction(action.id)}
+                >
+                  {action.button}
+                </button>
+              </article>
+            ))}
+          </div>
         </section>
 
         {stockCadastroType === "produto" && (
           <section className="module-content stock-wide">
             <h2>{editingStockItemId ? "Editar produto ou item" : "Cadastrar produto ou item"}</h2>
-            <p className="stock-help">Informe apenas os dados fixos do produto. O saldo, lote e validade ficam no cadastro de estoque.</p>
+            <p className="stock-help">Informe os dados fixos do produto. Saldo, lote e validade entram pelas ações de entrada, saída e inventário acima.</p>
 
             <form className="stock-form-grid" onSubmit={saveStockItem}>
               <label>
@@ -2520,16 +2563,7 @@ export default function App() {
           <div className="stock-title-row">
             <div>
               <h2>Gestão de estoque</h2>
-              <p className="stock-help">Controle produtos, entradas, saídas, transferências, inventário, validade e perdas financeiras.</p>
-            </div>
-            <div className="stock-title-actions">
-              <button className="primary" type="button" onClick={() => openStockModal("product")}>Novo Produto</button>
-              <button className="primary" type="button" onClick={() => openStockModal("entry")}>Nova Entrada</button>
-              <button className="secondary" type="button" onClick={() => openStockModal("exit")}>Nova Saída</button>
-              <button className="secondary" type="button" onClick={() => openStockModal("transfer")}>Transferir</button>
-              <button className="secondary" type="button" onClick={() => openStockModal("inventory")}>Inventário</button>
-              <button className="danger" type="button" onClick={() => openStockModal("loss")}>Registrar Perda</button>
-              <button className="secondary" type="button" onClick={() => openStockModal("movements")}>Ver Movimentações</button>
+              <p className="stock-help">Acompanhe saldos, validade, filtros e situação atual dos produtos.</p>
             </div>
           </div>
         </section>
@@ -2596,7 +2630,7 @@ export default function App() {
           {filteredStockItems.length === 0 ? (
             <div className="module-placeholder">
               <strong>Nenhum produto encontrado</strong>
-              <p>Use Novo Produto para cadastrar ou ajuste os filtros.</p>
+              <p>Use a aba Cadastro para criar produtos ou ajuste os filtros.</p>
             </div>
           ) : (
             <div className="stock-table-wrap">
@@ -2634,7 +2668,7 @@ export default function App() {
                       <td><span className={`stock-status-badge status-${item.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")}`}>{item.status}</span></td>
                       <td>
                         <div className="table-actions">
-                          <button className="secondary" type="button" onClick={() => openStockModal("product", item)}>Editar</button>
+                          <button className="secondary" type="button" onClick={() => editStockItem(item)}>Editar</button>
                           <button className="danger" type="button" onClick={() => inactivateStockItem(item.id)}>Inativar</button>
                         </div>
                       </td>
@@ -2645,8 +2679,6 @@ export default function App() {
             </div>
           )}
         </section>
-
-        {renderActiveStockModal()}
       </>
     );
   }
@@ -2732,6 +2764,7 @@ export default function App() {
         {stockPage === "itens" && renderStockItens()}
         {stockPage === "estoque" && renderStockEstoque()}
         {stockPage === "acompanhamento" && renderAcompanhamentoEstoque()}
+        {renderActiveStockModal()}
       </OperationalModuleLayout>
     );
   }
