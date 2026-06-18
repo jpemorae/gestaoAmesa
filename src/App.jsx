@@ -407,6 +407,7 @@ export default function App() {
     allowedModules: ["checklist", "acesso"]
   });
   const [editingStockUserId, setEditingStockUserId] = useState(null);
+  const [showStockUserModal, setShowStockUserModal] = useState(false);
 
   const [checklistPage, setChecklistPage] = useState("executar");
   const [runningChecklist, setRunningChecklist] = useTenantPersistentState("gestao_mesa_checklist_running", activeCompanyId, {}, legacyCompanyId);
@@ -1472,6 +1473,7 @@ export default function App() {
       allowedModules: ["checklist", "acesso"]
     });
     setEditingStockUserId(null);
+    setShowStockUserModal(false);
   }
 
   function toggleStockUserSector(area) {
@@ -1505,6 +1507,13 @@ export default function App() {
       telegramPhone: user.telegramPhone || "",
       allowedModules: user.allowedModules || ["checklist", "acesso"]
     });
+    setShowStockUserModal(true);
+  }
+
+  function openStockUserModal() {
+    resetStockUserForm();
+    setAccessCadastroType("usuario");
+    setShowStockUserModal(true);
   }
 
   async function saveStockUser(event) {
@@ -1576,6 +1585,7 @@ export default function App() {
     }
 
     resetStockUserForm();
+    setShowStockUserModal(false);
   }
 
   async function deleteStockUser(userId) {
@@ -2271,13 +2281,13 @@ export default function App() {
     );
   }
 
-  function StockModal({ title, children }) {
+  function StockModal({ title, children, onClose = closeStockModal }) {
     return (
       <div className="stock-modal-backdrop">
         <section className="stock-modal">
           <div className="stock-modal-header">
             <h2>{title}</h2>
-            <button className="secondary" type="button" onClick={closeStockModal}>Fechar</button>
+            <button className="secondary" type="button" onClick={onClose}>Fechar</button>
           </div>
           {children}
         </section>
@@ -3239,7 +3249,7 @@ export default function App() {
             key={option.id}
             type="button"
             className={accessCadastroType === option.id ? "cadastro-card active" : "cadastro-card"}
-            onClick={() => setAccessCadastroType(option.id)}
+            onClick={() => option.id === "usuario" ? openStockUserModal() : setAccessCadastroType(option.id)}
           >
             <span>{option.icon}</span>
             <strong>{option.title}</strong>
@@ -3250,23 +3260,28 @@ export default function App() {
     );
   }
 
-  function renderAccessUserForm() {
+  function renderAccessUserForm({ insideModal = false } = {}) {
     const selectedSectors = getSelectedStockUserSectors();
     const isEditing = Boolean(editingStockUserId);
     const contractedModuleIds = getCurrentClient()?.enabledModules || SOLUTION_MODULES.map((module) => module.id);
     const permissionModules = SOLUTION_MODULES.filter((module) => contractedModuleIds.includes(module.id));
 
     return (
-      <div className="access-user-editor">
-        <div className="access-section-heading">
-          <div>
-            <h2>{isEditing ? "Editar usuário" : "Cadastrar usuário"}</h2>
-            <p className="stock-help">Perfil, setores, permissões e notificações do funcionário.</p>
+      <div className={insideModal ? "access-user-editor access-user-editor-modal" : "access-user-editor"}>
+        {!insideModal && (
+          <div className="access-section-heading">
+            <div>
+              <h2>{isEditing ? "Editar usuário" : "Cadastrar usuário"}</h2>
+              <p className="stock-help">Perfil, setores, permissões e notificações do funcionário.</p>
+            </div>
+            {isEditing && (
+              <button className="secondary" type="button" onClick={resetStockUserForm}>Cancelar edição</button>
+            )}
           </div>
-          {isEditing && (
-            <button className="secondary" type="button" onClick={resetStockUserForm}>Cancelar edição</button>
-          )}
-        </div>
+        )}
+        {insideModal && (
+          <p className="stock-help">Perfil, setores, permissões e notificações do funcionário.</p>
+        )}
 
         <form className="access-form-shell" onSubmit={saveStockUser}>
           <div className="access-form-grid">
@@ -4112,12 +4127,17 @@ export default function App() {
 
         {accessCadastroType === "produto" ? (
           renderStockCadastro()
-        ) : (
+        ) : accessCadastroType === "usuario" ? null : (
           <section className="module-content stock-wide">
-            {accessCadastroType === "usuario" && renderAccessUserForm()}
             {accessCadastroType === "processo" && renderAccessProcessForm()}
             {accessCadastroType === "area" && renderAccessAreaForm()}
           </section>
+        )}
+
+        {showStockUserModal && (
+          <StockModal title={editingStockUserId ? "Editar usuário" : "Cadastrar usuário"} onClose={resetStockUserForm}>
+            {renderAccessUserForm({ insideModal: true })}
+          </StockModal>
         )}
 
         {accessCadastroType === "usuario" && (

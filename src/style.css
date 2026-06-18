@@ -3084,6 +3084,15 @@ td {
   gap: 16px;
 }
 
+.access-user-editor-modal {
+  overflow: auto;
+  padding: 18px;
+}
+
+.access-user-editor-modal > .stock-help {
+  margin: 0;
+}
+
 .access-form-shell {
   display: grid;
   gap: 14px;
