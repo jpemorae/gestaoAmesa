@@ -7,7 +7,7 @@ export const MODULE_INFO = {
   estoque: {
     title: "Controle de estoque",
     icon: "📦",
-    description: "Cadastro, lançamento e extrato dos itens de estoque."
+    description: "Entradas, saídas, saldos, validade e movimentações."
   },
   etiquetas: {
     title: "Etiquetas",
@@ -20,8 +20,8 @@ export const MODULE_INFO = {
     description: "Execução, evidências, recorrência e histórico operacional."
   },
   acesso: {
-    title: "Gestão de acesso",
+    title: "Cadastros",
     icon: "👥",
-    description: "Funcionários, perfis, setores, permissões e notificações."
+    description: "Produtos, usuários, áreas, processos e atividades."
   }
 };

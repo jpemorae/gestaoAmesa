@@ -183,7 +183,7 @@ export default function App() {
     };
   }, []);
 
-  const [stockPage, setStockPage] = useState("cadastro");
+  const [stockPage, setStockPage] = useState("estoque");
   const legacyCompanyId = initialClients[0]?.id;
   const [stockCategories, setStockCategories] = useTenantPersistentState("gestao_mesa_stock_categories", activeCompanyId, [
     { id: "cat-comida", name: "Comida" },
@@ -304,7 +304,7 @@ export default function App() {
   const [qrDiscardReason, setQrDiscardReason] = useState("");
 
   const [stockCadastroType, setStockCadastroType] = useState("produto");
-  const [accessCadastroType, setAccessCadastroType] = useState("usuario");
+  const [accessCadastroType, setAccessCadastroType] = useState("produto");
   const [areaForm, setAreaForm] = useState("");
   const [areas, setAreas] = useTenantPersistentState("gestao_mesa_areas", activeCompanyId, ["Cozinha", "Salão", "Estoque", "Bar"], legacyCompanyId);
   const [kanbanAreaFilter, setKanbanAreaFilter] = useState("Todas");
@@ -871,7 +871,8 @@ export default function App() {
   function editStockItem(item) {
     setEditingStockItemId(item.id);
     setStockCadastroType("produto");
-    setStockPage("cadastro");
+    setAccessCadastroType("produto");
+    setPage("acesso");
     setStockItemForm({
       name: item.name || "",
       type: item.type || "Produto",
@@ -1076,7 +1077,8 @@ export default function App() {
   }
 
   function openStockCadastroAction(type) {
-    setStockPage("cadastro");
+    setAccessCadastroType("produto");
+    setPage("acesso");
 
     if (type === "product") {
       resetStockItemForm();
@@ -2003,7 +2005,7 @@ export default function App() {
         {filteredStockItems.length === 0 ? (
           <div className="module-placeholder">
             <strong>Nenhum cadastro encontrado</strong>
-            <p>Use o menu Cadastro para criar produtos, itens, processos ou atividades.</p>
+            <p>Use o módulo Cadastros para criar produtos, itens, processos ou atividades.</p>
           </div>
         ) : (
           <div className="stock-table-wrap">
@@ -2630,7 +2632,7 @@ export default function App() {
           {filteredStockItems.length === 0 ? (
             <div className="module-placeholder">
               <strong>Nenhum produto encontrado</strong>
-              <p>Use a aba Cadastro para criar produtos ou ajuste os filtros.</p>
+              <p>Use o módulo Cadastros para criar produtos ou ajuste os filtros.</p>
             </div>
           ) : (
             <div className="stock-table-wrap">
@@ -2752,7 +2754,6 @@ export default function App() {
 
   function renderStockModule() {
     const items = [
-      { id: "cadastro", label: "Cadastro" },
       { id: "itens", label: "Itens cadastrados" },
       { id: "estoque", label: "Estoque" },
       { id: "acompanhamento", label: "Acompanhamento (dashboard)" }
@@ -2760,7 +2761,6 @@ export default function App() {
 
     return (
       <OperationalModuleLayout items={items} page={stockPage} onNavigate={setStockPage}>
-        {stockPage === "cadastro" && renderStockCadastro()}
         {stockPage === "itens" && renderStockItens()}
         {stockPage === "estoque" && renderStockEstoque()}
         {stockPage === "acompanhamento" && renderAcompanhamentoEstoque()}
@@ -2774,12 +2774,12 @@ export default function App() {
     return (
       <section className="module-content checklist-wide">
         <h2>Atividades do checklist</h2>
-        <p className="stock-help">As atividades vêm do cadastro de Processo/Atividade feito no módulo Controle de estoque.</p>
+        <p className="stock-help">As atividades vêm do cadastro de Processo/Atividade feito no módulo Cadastros.</p>
 
         {checklistActivities.length === 0 ? (
           <div className="module-placeholder">
             <strong>Nenhuma atividade cadastrada</strong>
-            <p>Volte ao Controle de estoque → Cadastro → Processo/Atividade para criar atividades.</p>
+            <p>Volte ao módulo Cadastros → Processo/Atividade para criar atividades.</p>
           </div>
         ) : (
           <div className="stock-table-wrap">
@@ -3063,6 +3063,7 @@ export default function App() {
 
   function renderAccessCadastroSelector() {
     const options = [
+      { id: "produto", title: "Produto / Item", icon: "📦", description: "Cadastre produtos, itens, categorias e unidade padrão." },
       { id: "usuario", title: "Usuário", icon: "👤", description: "Cadastre funcionários, perfil, setor, cargo e Telegram." },
       { id: "processo", title: "Processo / Atividade", icon: "✅", description: "Cadastre rotinas operacionais para o checklist." },
       { id: "area", title: "Área / Departamento", icon: "🏢", description: "Cadastre áreas como Cozinha, Salão, Estoque e Bar." }
@@ -3915,35 +3916,40 @@ export default function App() {
   }
 
   function renderAccessModule() {
+    const productCadastros = stockItems.filter((item) => item.type === "Produto" || item.type === "Item").length;
+    const processCadastros = stockItems.filter((item) => item.type === "Processo" || item.type === "Atividade").length;
     const activeUsers = stockUsers.filter((user) => user.status === "Ativo").length;
-    const managerUsers = stockUsers.filter((user) => user.profile === "Gestor" || user.profile === "Administrador").length;
-    const telegramUsers = stockUsers.filter((user) => user.telegramEnabled).length;
 
     return (
       <OperationalModuleLayout className="access-workspace" items={[{ id: "cadastros", label: "Cadastros" }]} page="cadastros" onNavigate={() => {}}>
         <section className="module-content stock-wide access-command-center">
           <div className="access-section-heading">
             <div>
-              <h2>Gestão de acesso</h2>
-              <p className="stock-help">Usuários, áreas e rotinas operacionais do cliente.</p>
+              <h2>Cadastros</h2>
+              <p className="stock-help">Central de cadastros da operação: produtos, usuários, áreas e rotinas.</p>
             </div>
           </div>
 
           <div className="access-overview-grid">
+            <MiniDashCard title="Produtos / Itens" value={productCadastros} detail="Base de estoque" />
             <MiniDashCard title="Usuários" value={stockUsers.length} detail="Cadastrados" />
-            <MiniDashCard title="Ativos" value={activeUsers} detail="Com acesso liberado" />
-            <MiniDashCard title="Gestores" value={managerUsers} detail="Perfis de liderança" />
-            <MiniDashCard title="Telegram" value={telegramUsers} detail="Notificações ativas" />
+            <MiniDashCard title="Usuários ativos" value={activeUsers} detail="Com acesso liberado" />
+            <MiniDashCard title="Áreas" value={areas.length} detail="Departamentos" />
+            <MiniDashCard title="Rotinas" value={processCadastros} detail="Processos e atividades" />
           </div>
 
           {renderAccessCadastroSelector()}
         </section>
 
-        <section className="module-content stock-wide">
-          {accessCadastroType === "usuario" && renderAccessUserForm()}
-          {accessCadastroType === "processo" && renderAccessProcessForm()}
-          {accessCadastroType === "area" && renderAccessAreaForm()}
-        </section>
+        {accessCadastroType === "produto" ? (
+          renderStockCadastro()
+        ) : (
+          <section className="module-content stock-wide">
+            {accessCadastroType === "usuario" && renderAccessUserForm()}
+            {accessCadastroType === "processo" && renderAccessProcessForm()}
+            {accessCadastroType === "area" && renderAccessAreaForm()}
+          </section>
+        )}
 
         {accessCadastroType === "usuario" && (
             <section className="module-content stock-wide">

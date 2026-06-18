@@ -15,7 +15,7 @@ export const SOLUTION_MODULES = [
     id: "estoque",
     title: "Controle de estoque",
     icon: "📦",
-    description: "Produtos, quantidades, pesos e validade."
+    description: "Entradas, saídas, saldos e validade."
   },
   {
     id: "etiquetas",
@@ -31,9 +31,9 @@ export const SOLUTION_MODULES = [
   },
   {
     id: "acesso",
-    title: "Gestão de acesso",
+    title: "Cadastros",
     icon: "👥",
-    description: "Funcionários, perfis, permissões e notificações."
+    description: "Produtos, usuários, áreas e rotinas."
   }
 ];
 
