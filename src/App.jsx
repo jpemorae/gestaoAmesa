@@ -388,6 +388,8 @@ export default function App() {
   const [stockCadastroType, setStockCadastroType] = useState("produto");
   const [accessCadastroType, setAccessCadastroType] = useState("produto");
   const [areaForm, setAreaForm] = useState("");
+  const [showProcessActivityModal, setShowProcessActivityModal] = useState(false);
+  const [showAreaDepartmentModal, setShowAreaDepartmentModal] = useState(false);
   const [areas, setAreas] = useTenantPersistentState("gestao_mesa_areas", activeCompanyId, ["Cozinha", "Salão", "Estoque", "Bar"], legacyCompanyId);
   const [kanbanAreaFilter, setKanbanAreaFilter] = useState("Todas");
   const [stockUsers, setStockUsers] = useTenantPersistentState("gestao_mesa_company_users", activeCompanyId, [], legacyCompanyId);
@@ -1514,6 +1516,35 @@ export default function App() {
     resetStockUserForm();
     setAccessCadastroType("usuario");
     setShowStockUserModal(true);
+  }
+
+  function openProcessActivityModal() {
+    setProcessActivityForm({
+      name: "",
+      type: "Processo",
+      area: "",
+      startTime: "",
+      endTime: "",
+      repeats: "Não",
+      repeatQuantity: "1",
+      frequency: "Diário"
+    });
+    setAccessCadastroType("processo");
+    setShowProcessActivityModal(true);
+  }
+
+  function closeProcessActivityModal() {
+    setShowProcessActivityModal(false);
+  }
+
+  function openAreaDepartmentModal() {
+    setAreaForm("");
+    setAccessCadastroType("area");
+    setShowAreaDepartmentModal(true);
+  }
+
+  function closeAreaDepartmentModal() {
+    setShowAreaDepartmentModal(false);
   }
 
   async function saveStockUser(event) {
@@ -3249,7 +3280,12 @@ export default function App() {
             key={option.id}
             type="button"
             className={accessCadastroType === option.id ? "cadastro-card active" : "cadastro-card"}
-            onClick={() => option.id === "usuario" ? openStockUserModal() : setAccessCadastroType(option.id)}
+            onClick={() => {
+              if (option.id === "usuario") return openStockUserModal();
+              if (option.id === "processo") return openProcessActivityModal();
+              if (option.id === "area") return openAreaDepartmentModal();
+              return setAccessCadastroType(option.id);
+            }}
           >
             <span>{option.icon}</span>
             <strong>{option.title}</strong>
@@ -3488,13 +3524,14 @@ export default function App() {
       repeatQuantity: "1",
       frequency: "Diário"
     });
+    closeProcessActivityModal();
   }
 
 
-  function renderAccessProcessForm() {
+  function renderAccessProcessForm({ insideModal = false } = {}) {
     return (
       <>
-        <h2>Cadastrar processo ou atividade</h2>
+        {!insideModal && <h2>Cadastrar processo ou atividade</h2>}
         <p className="stock-help">Cadastre rotinas operacionais que serão usadas no módulo Checklist. Se marcar repetição diária, a atividade volta automaticamente no dia seguinte após concluída.</p>
 
         <form className="stock-form-grid" onSubmit={saveProcessActivity}>
@@ -3575,6 +3612,7 @@ export default function App() {
 
     setAreas([...areas, name]);
     setAreaForm("");
+    closeAreaDepartmentModal();
   }
 
   function deleteAreaDepartment(name) {
@@ -3591,10 +3629,10 @@ export default function App() {
     setAreas(areas.filter((area) => area !== name));
   }
 
-  function renderAccessAreaForm() {
+  function renderAccessAreaForm({ insideModal = false } = {}) {
     return (
       <>
-        <h2>Cadastrar área / departamento</h2>
+        {!insideModal && <h2>Cadastrar área / departamento</h2>}
         <p className="stock-help">Cadastre áreas para reutilizar em usuários, processos, checklist e Kanban.</p>
 
         <form className="stock-inline-form" onSubmit={saveAreaDepartment}>
@@ -4127,16 +4165,30 @@ export default function App() {
 
         {accessCadastroType === "produto" ? (
           renderStockCadastro()
-        ) : accessCadastroType === "usuario" ? null : (
+        ) : ["usuario", "processo", "area"].includes(accessCadastroType) ? null : (
           <section className="module-content stock-wide">
-            {accessCadastroType === "processo" && renderAccessProcessForm()}
-            {accessCadastroType === "area" && renderAccessAreaForm()}
           </section>
         )}
 
         {showStockUserModal && (
           <StockModal title={editingStockUserId ? "Editar usuário" : "Cadastrar usuário"} onClose={resetStockUserForm}>
             {renderAccessUserForm({ insideModal: true })}
+          </StockModal>
+        )}
+
+        {showProcessActivityModal && (
+          <StockModal title="Cadastrar processo ou atividade" onClose={closeProcessActivityModal}>
+            <div className="access-user-editor access-user-editor-modal">
+              {renderAccessProcessForm({ insideModal: true })}
+            </div>
+          </StockModal>
+        )}
+
+        {showAreaDepartmentModal && (
+          <StockModal title="Cadastrar área / departamento" onClose={closeAreaDepartmentModal}>
+            <div className="access-user-editor access-user-editor-modal">
+              {renderAccessAreaForm({ insideModal: true })}
+            </div>
           </StockModal>
         )}
 
