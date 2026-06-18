@@ -290,3 +290,53 @@ export async function deleteAppClient(req, res) {
   if (error) return res.status(400).json({ error: error.message });
   return res.status(204).send();
 }
+
+export async function getClientStockCatalog(req, res) {
+  const { data, error } = await supabaseAdmin
+    .from("app_clients")
+    .select("payload")
+    .eq("id", req.params.id)
+    .maybeSingle();
+
+  if (error) return res.status(400).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: "Cliente não encontrado." });
+
+  const catalog = data.payload?.stockCatalog || {};
+  return res.json({
+    categories: Array.isArray(catalog.categories) ? catalog.categories : [],
+    items: Array.isArray(catalog.items) ? catalog.items : [],
+    updatedAt: catalog.updatedAt || null
+  });
+}
+
+export async function updateClientStockCatalog(req, res) {
+  const { data: current, error: currentError } = await supabaseAdmin
+    .from("app_clients")
+    .select("payload")
+    .eq("id", req.params.id)
+    .maybeSingle();
+
+  if (currentError) return res.status(400).json({ error: currentError.message });
+  if (!current) return res.status(404).json({ error: "Cliente não encontrado." });
+
+  const stockCatalog = {
+    categories: Array.isArray(req.body.categories) ? req.body.categories : [],
+    items: Array.isArray(req.body.items) ? req.body.items : [],
+    updatedAt: new Date().toISOString()
+  };
+
+  const payload = {
+    ...(current.payload || {}),
+    stockCatalog
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from("app_clients")
+    .update({ payload, updated_at: new Date().toISOString() })
+    .eq("id", req.params.id)
+    .select("payload")
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  return res.json(data.payload.stockCatalog);
+}

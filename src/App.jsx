@@ -22,10 +22,12 @@ import {
 import {
   canUseAppDataApi,
   loadAppData,
+  loadClientStockCatalog,
   loginAppUser,
   removeAppClient,
   removeAppUser,
   saveAppClient,
+  saveClientStockCatalog,
   saveAppUser
 } from "./services/appDataService";
 import {
@@ -225,6 +227,86 @@ export default function App() {
     defaultQuantity: 0,
     defaultValidityDays: 0
   });
+  const [stockCatalogSyncedCompany, setStockCatalogSyncedCompany] = useState("");
+  const [stockCatalogSyncState, setStockCatalogSyncState] = useState("local");
+
+  function readTenantStoredValue(key, companyId, fallback) {
+    try {
+      const stored = localStorage.getItem(`${key}:${companyId || "sem-cliente"}`);
+      return stored ? JSON.parse(stored) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  async function persistStockCatalog(nextCategories = stockCategories, nextItems = stockItems, options = {}) {
+    if (!canUseAppDataApi() || !activeCompanyId) {
+      setStockCatalogSyncState("local");
+      return true;
+    }
+
+    try {
+      setStockCatalogSyncState("syncing");
+      await saveClientStockCatalog(activeCompanyId, {
+        categories: nextCategories,
+        items: nextItems
+      });
+      setStockCatalogSyncState("synced");
+      return true;
+    } catch (error) {
+      setStockCatalogSyncState("error");
+      if (!options.silent) {
+        alert(`Cadastro salvo neste computador, mas não sincronizado no banco: ${error.message}`);
+      }
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    if (!canUseAppDataApi()) {
+      setStockCatalogSyncState("local");
+      return;
+    }
+    if (!activeCompanyId || stockCatalogSyncedCompany === activeCompanyId) return;
+
+    let active = true;
+    setStockCatalogSyncState("syncing");
+
+    loadClientStockCatalog(activeCompanyId)
+      .then(async (catalog) => {
+        if (!active) return;
+
+        const remoteCategories = Array.isArray(catalog?.categories) ? catalog.categories : [];
+        const remoteItems = Array.isArray(catalog?.items) ? catalog.items : [];
+        const hasRemoteCatalog = remoteCategories.length > 0 || remoteItems.length > 0;
+
+        if (hasRemoteCatalog) {
+          setStockCategories(remoteCategories);
+          setStockItems(remoteItems);
+        } else {
+          const localCategories = readTenantStoredValue("gestao_mesa_stock_categories", activeCompanyId, stockCategories);
+          const localItems = readTenantStoredValue("gestao_mesa_stock_products", activeCompanyId, stockItems);
+          await saveClientStockCatalog(activeCompanyId, {
+            categories: Array.isArray(localCategories) ? localCategories : [],
+            items: Array.isArray(localItems) ? localItems : []
+          });
+        }
+
+        if (!active) return;
+        setStockCatalogSyncedCompany(activeCompanyId);
+        setStockCatalogSyncState("synced");
+      })
+      .catch((error) => {
+        console.warn("Falha ao sincronizar cadastro de estoque:", error.message);
+        if (!active) return;
+        setStockCatalogSyncedCompany(activeCompanyId);
+        setStockCatalogSyncState("error");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeCompanyId, stockCatalogSyncedCompany]);
 
   const [processActivityForm, setProcessActivityForm] = useState({
     name: "",
@@ -766,26 +848,30 @@ export default function App() {
     };
   }, [stockItemsView, stockLosses, stockAlertDays]);
 
-  function addStockCategory(event) {
+  async function addStockCategory(event) {
     event.preventDefault();
     const name = stockCategoryName.trim();
     if (!name) return alert("Informe o nome da categoria.");
     if (stockCategories.some((category) => category.name.toLowerCase() === name.toLowerCase())) {
       return alert("Categoria já cadastrada.");
     }
-    setStockCategories([...stockCategories, { id: crypto.randomUUID(), name }]);
+    const nextCategories = [...stockCategories, { id: crypto.randomUUID(), name }];
+    setStockCategories(nextCategories);
+    await persistStockCatalog(nextCategories, stockItems);
     setStockCategoryName("");
   }
 
-  function deleteStockCategory(categoryId) {
+  async function deleteStockCategory(categoryId) {
     if (stockItems.some((item) => item.categoryId === categoryId)) {
       alert("Não é possível excluir categoria vinculada a cadastro.");
       return;
     }
-    setStockCategories(stockCategories.filter((category) => category.id !== categoryId));
+    const nextCategories = stockCategories.filter((category) => category.id !== categoryId);
+    setStockCategories(nextCategories);
+    await persistStockCatalog(nextCategories, stockItems);
   }
 
-  function saveStockItem(event) {
+  async function saveStockItem(event) {
     event.preventDefault();
 
     if (!stockItemForm.name.trim()) return alert("Informe o nome.");
@@ -799,7 +885,7 @@ export default function App() {
         return alert("Este produto possui estoque lançado. Mantenha uma unidade compatível para preservar os cálculos.");
       }
 
-      setStockItems(stockItems.map((item) =>
+      const nextItems = stockItems.map((item) =>
         item.id === editingStockItemId
           ? {
               ...item,
@@ -812,7 +898,10 @@ export default function App() {
               defaultValidityDays: 0
             }
           : item
-      ));
+      );
+
+      setStockItems(nextItems);
+      await persistStockCatalog(stockCategories, nextItems);
 
       resetStockItemForm();
       return;
@@ -830,7 +919,9 @@ export default function App() {
       createdAt: new Date().toLocaleString("pt-BR")
     };
 
-    setStockItems([newItem, ...stockItems]);
+    const nextItems = [newItem, ...stockItems];
+    setStockItems(nextItems);
+    await persistStockCatalog(stockCategories, nextItems);
     appendStockMovement({
       itemId: newItem.id,
       itemName: newItem.name,
@@ -1092,14 +1183,16 @@ export default function App() {
     }
   }
 
-  function inactivateStockItem(itemId) {
+  async function inactivateStockItem(itemId) {
     const hasMovements = stockMovements.some((movement) => movement.itemId === itemId);
     const message = hasMovements
       ? "Este produto possui movimentações. Ele será inativado e permanecerá no histórico."
       : "Deseja inativar este produto?";
     if (!confirm(message)) return;
     const item = stockItems.find((currentItem) => currentItem.id === itemId);
-    setStockItems(stockItems.map((currentItem) => currentItem.id === itemId ? { ...currentItem, status: "Inativo" } : currentItem));
+    const nextItems = stockItems.map((currentItem) => currentItem.id === itemId ? { ...currentItem, status: "Inativo" } : currentItem);
+    setStockItems(nextItems);
+    await persistStockCatalog(stockCategories, nextItems);
     appendStockMovement({
       itemId,
       itemName: item?.name || "Produto",
