@@ -32,7 +32,7 @@ export const SOLUTION_MODULES = [
   {
     id: "acesso",
     title: "Cadastros",
-    icon: "👥",
+    icon: "⚙️",
     description: "Produtos, usuários, áreas e rotinas."
   }
 ];

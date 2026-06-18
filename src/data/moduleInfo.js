@@ -21,7 +21,7 @@ export const MODULE_INFO = {
   },
   acesso: {
     title: "Cadastros",
-    icon: "👥",
+    icon: "⚙️",
     description: "Produtos, usuários, áreas, processos e atividades."
   }
 };
