@@ -912,6 +912,7 @@ export default function App() {
       await persistStockCatalog(stockCategories, nextItems);
 
       resetStockItemForm();
+      closeStockModal();
       return;
     }
 
@@ -969,9 +970,6 @@ export default function App() {
 
   function editStockItem(item) {
     setEditingStockItemId(item.id);
-    setStockCadastroType("produto");
-    setAccessCadastroType("produto");
-    setPage("acesso");
     setStockItemForm({
       name: item.name || "",
       type: item.type || "Produto",
@@ -987,6 +985,7 @@ export default function App() {
       defaultQuantity: 0,
       defaultValidityDays: 0
     });
+    setStockModal("product");
   }
 
 
@@ -2298,11 +2297,30 @@ export default function App() {
 
   function renderStockProductModal() {
     return (
-      <StockModal title={editingStockItemId ? "Editar produto" : "Novo produto"}>
+      <StockModal title={editingStockItemId ? "Editar produto ou item" : "Novo produto"}>
+        <p className="stock-help stock-modal-help">Informe os dados fixos do produto. Entradas, saídas, transferências e inventário ficam na tela Estoque.</p>
         <form className="stock-form-grid stock-modal-form" onSubmit={saveStockItem}>
           <label>
-            Nome do produto
-            <input value={stockItemForm.name} onChange={(event) => setStockItemForm({ ...stockItemForm, name: event.target.value })} placeholder="Ex: Carne, arroz, cerveja" />
+            Tipo de cadastro
+            <select
+              value={stockItemForm.type}
+              onChange={(event) => setStockItemForm({ ...stockItemForm, type: event.target.value })}
+            >
+              <option>Produto</option>
+              <option>Item</option>
+            </select>
+          </label>
+          <label>
+            Nome
+            <input value={stockItemForm.name} onChange={(event) => setStockItemForm({ ...stockItemForm, name: event.target.value })} placeholder="Ex: Carne, Arroz, Etiqueta térmica" />
+          </label>
+          <label>
+            Código interno
+            <input value={stockItemForm.internalCode} onChange={(event) => setStockItemForm({ ...stockItemForm, internalCode: event.target.value })} placeholder="Ex: INS-001" />
+          </label>
+          <label>
+            Código de barras
+            <input value={stockItemForm.barcode} onChange={(event) => setStockItemForm({ ...stockItemForm, barcode: event.target.value })} placeholder="EAN, SKU ou código interno" />
           </label>
           <label>
             Categoria
@@ -2311,31 +2329,32 @@ export default function App() {
               {stockCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
             </select>
           </label>
-          <label>
-            Código interno
-            <input value={stockItemForm.internalCode} onChange={(event) => setStockItemForm({ ...stockItemForm, internalCode: event.target.value })} placeholder="Ex: INS-001" />
-          </label>
-          <label>
-            Código de barras
-            <input value={stockItemForm.barcode} onChange={(event) => setStockItemForm({ ...stockItemForm, barcode: event.target.value })} placeholder="EAN, SKU ou código" />
-          </label>
-          <label>
-            Unidade de medida
-            <select value={stockItemForm.unit} onChange={(event) => setStockItemForm({ ...stockItemForm, unit: event.target.value })}>
-              {["kg", "g", "L", "ml", "un", "pacote", "caixa"].map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}
-            </select>
-          </label>
+          <div className="unit-picker-stock">
+            <span>Unidade padrão</span>
+            <div className="unit-buttons-stock">
+              {["kg", "g", "L", "ml", "un", "pacote", "caixa"].map((unit) => (
+                <button
+                  type="button"
+                  key={unit}
+                  className={stockItemForm.unit === unit ? "unit-btn-stock active" : "unit-btn-stock"}
+                  onClick={() => setStockItemForm({ ...stockItemForm, unit })}
+                >
+                  {unitLabel(unit)}
+                </button>
+              ))}
+            </div>
+          </div>
           <label>
             Estoque mínimo
-            <input type="number" step="0.001" value={stockItemForm.minStock} onChange={(event) => setStockItemForm({ ...stockItemForm, minStock: event.target.value })} />
+            <input type="number" step="0.001" value={stockItemForm.minStock} onChange={(event) => setStockItemForm({ ...stockItemForm, minStock: event.target.value })} placeholder="Ex: 5" />
           </label>
           <label>
             Estoque máximo
-            <input type="number" step="0.001" value={stockItemForm.maxStock} onChange={(event) => setStockItemForm({ ...stockItemForm, maxStock: event.target.value })} />
+            <input type="number" step="0.001" value={stockItemForm.maxStock} onChange={(event) => setStockItemForm({ ...stockItemForm, maxStock: event.target.value })} placeholder="Ex: 50" />
           </label>
           <label>
             Custo unitário
-            <input type="number" step="0.01" value={stockItemForm.unitCost} onChange={(event) => setStockItemForm({ ...stockItemForm, unitCost: event.target.value })} />
+            <input type="number" step="0.01" value={stockItemForm.unitCost} onChange={(event) => setStockItemForm({ ...stockItemForm, unitCost: event.target.value })} placeholder="Ex: 12.90" />
           </label>
           <label>
             Controla validade?
@@ -2345,7 +2364,7 @@ export default function App() {
             </select>
           </label>
           <label>
-            Ativo/Inativo
+            Status
             <select value={stockItemForm.status} onChange={(event) => setStockItemForm({ ...stockItemForm, status: event.target.value })}>
               <option>Ativo</option>
               <option>Inativo</option>
@@ -2353,7 +2372,7 @@ export default function App() {
           </label>
           <div className="stock-modal-footer">
             <button className="secondary" type="button" onClick={closeStockModal}>Cancelar</button>
-            <button className="primary" type="submit">{editingStockItemId ? "Salvar produto" : "Cadastrar produto"}</button>
+            <button className="primary" type="submit">{editingStockItemId ? "Salvar alterações" : "Cadastrar produto/item"}</button>
           </div>
         </form>
       </StockModal>
