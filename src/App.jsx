@@ -315,6 +315,7 @@ export default function App() {
     password: "",
     profile: "Operação",
     sector: "",
+    sectors: [],
     role: "",
     status: "Ativo",
     telegramEnabled: false,
@@ -323,6 +324,7 @@ export default function App() {
     telegramPhone: "",
     allowedModules: ["checklist"]
   });
+  const [editingStockUserId, setEditingStockUserId] = useState(null);
 
   const [checklistPage, setChecklistPage] = useState("executar");
   const [runningChecklist, setRunningChecklist] = useTenantPersistentState("gestao_mesa_checklist_running", activeCompanyId, {}, legacyCompanyId);
@@ -1321,59 +1323,29 @@ export default function App() {
   }
 
 
-  function saveStockUser(event) {
-    event.preventDefault();
+  function getStockUserSectors(user = stockUserForm) {
+    const fromList = Array.isArray(user.sectors) ? user.sectors.filter(Boolean) : [];
+    const legacy = user.sector ? [user.sector] : [];
+    return Array.from(new Set([...fromList, ...legacy]));
+  }
 
-    if (!stockUserForm.name.trim()) return alert("Informe o nome do usuário.");
-    if (!stockUserForm.email.trim()) return alert("Informe o e-mail do usuário.");
-    if (!stockUserForm.password.trim()) return alert("Informe a senha do usuário.");
-    if (!stockUserForm.sector.trim()) return alert("Informe o setor.");
-    if (!stockUserForm.role.trim()) return alert("Informe o cargo.");
+  function isMultiSectorProfile(profile = stockUserForm.profile) {
+    return profile === "Gestor" || profile === "Administrador";
+  }
 
-    if (stockUserForm.telegramEnabled && !stockUserForm.telegramChatId.trim()) {
-      return alert("Informe o Chat ID do Telegram para ativar notificações.");
-    }
+  function getSelectedStockUserSectors() {
+    const sectors = getStockUserSectors(stockUserForm);
+    return isMultiSectorProfile() ? sectors : sectors.slice(0, 1);
+  }
 
-    const emailExists = stockUsers.some((user) => user.email.toLowerCase() === stockUserForm.email.toLowerCase());
-    if (emailExists) return alert("Já existe um usuário com este e-mail.");
-
-    const newUserId = crypto.randomUUID();
-    const currentClient = getCurrentClient();
-
-    const newEmployee = {
-      id: newUserId,
-      ...stockUserForm,
-      userType: "client",
-      companyId: currentClient?.id || "cliente-divino-botequim",
-      createdAt: new Date().toLocaleDateString("pt-BR")
-    };
-
-    setStockUsers([newEmployee, ...stockUsers]);
-
-    setUsers([
-      {
-        id: newUserId,
-        name: stockUserForm.name,
-        email: stockUserForm.email,
-        password: stockUserForm.password,
-        profile: stockUserForm.profile,
-        sector: stockUserForm.sector,
-        role: stockUserForm.role,
-        status: stockUserForm.status,
-        userType: "client",
-        companyId: currentClient?.id || "cliente-divino-botequim",
-        allowedModules: stockUserForm.allowedModules || ["checklist"],
-        createdAt: new Date().toLocaleDateString("pt-BR")
-      },
-      ...users
-    ]);
-
+  function resetStockUserForm() {
     setStockUserForm({
       name: "",
       email: "",
       password: "",
       profile: "Operação",
       sector: "",
+      sectors: [],
       role: "",
       status: "Ativo",
       telegramEnabled: false,
@@ -1382,6 +1354,98 @@ export default function App() {
       telegramPhone: "",
       allowedModules: ["checklist"]
     });
+    setEditingStockUserId(null);
+  }
+
+  function toggleStockUserSector(area) {
+    const current = getStockUserSectors();
+    const next = current.includes(area)
+      ? current.filter((item) => item !== area)
+      : [...current, area];
+
+    setStockUserForm({
+      ...stockUserForm,
+      sector: next[0] || "",
+      sectors: next
+    });
+  }
+
+  function editStockUser(user) {
+    const sectors = getStockUserSectors(user);
+    setEditingStockUserId(user.id);
+    setStockUserForm({
+      name: user.name || "",
+      email: user.email || "",
+      password: user.password || "",
+      profile: user.profile || "Operação",
+      sector: sectors[0] || "",
+      sectors,
+      role: user.role || "",
+      status: user.status || "Ativo",
+      telegramEnabled: Boolean(user.telegramEnabled),
+      telegramUsername: user.telegramUsername || "",
+      telegramChatId: user.telegramChatId || "",
+      telegramPhone: user.telegramPhone || "",
+      allowedModules: user.allowedModules || ["checklist"]
+    });
+  }
+
+  function saveStockUser(event) {
+    event.preventDefault();
+
+    const selectedSectors = getSelectedStockUserSectors();
+
+    if (!stockUserForm.name.trim()) return alert("Informe o nome do usuário.");
+    if (!stockUserForm.email.trim()) return alert("Informe o e-mail do usuário.");
+    if (!stockUserForm.password.trim()) return alert("Informe a senha do usuário.");
+    if (!selectedSectors.length) return alert("Informe ao menos um setor.");
+    if (!stockUserForm.role.trim()) return alert("Informe o cargo.");
+
+    if (stockUserForm.telegramEnabled && !stockUserForm.telegramChatId.trim()) {
+      return alert("Informe o Chat ID do Telegram para ativar notificações.");
+    }
+
+    const emailExists = stockUsers.some((user) => user.id !== editingStockUserId && (user.email || "").toLowerCase() === stockUserForm.email.toLowerCase());
+    if (emailExists) return alert("Já existe um usuário com este e-mail.");
+
+    const newUserId = editingStockUserId || crypto.randomUUID();
+    const currentClient = getCurrentClient();
+    const userRecord = {
+      id: newUserId,
+      ...stockUserForm,
+      sector: selectedSectors[0] || "",
+      sectors: selectedSectors,
+      userType: "client",
+      companyId: currentClient?.id || "cliente-divino-botequim",
+      updatedAt: new Date().toLocaleDateString("pt-BR")
+    };
+
+    const employeeRecord = {
+      ...userRecord,
+      createdAt: stockUsers.find((user) => user.id === editingStockUserId)?.createdAt || new Date().toLocaleDateString("pt-BR")
+    };
+
+    setStockUsers(editingStockUserId
+      ? stockUsers.map((user) => user.id === editingStockUserId ? employeeRecord : user)
+      : [employeeRecord, ...stockUsers]
+    );
+
+    const globalUserRecord = {
+      ...userRecord,
+      createdAt: users.find((user) => user.id === editingStockUserId)?.createdAt || new Date().toLocaleDateString("pt-BR")
+    };
+
+    const userAlreadyExists = users.some((user) => user.id === editingStockUserId);
+    setUsers(editingStockUserId && userAlreadyExists
+      ? users.map((user) => user.id === editingStockUserId ? { ...user, ...globalUserRecord } : user)
+      : [globalUserRecord, ...users]
+    );
+
+    if (loggedUser?.id === editingStockUserId) {
+      setLoggedUser({ ...loggedUser, ...globalUserRecord });
+    }
+
+    resetStockUserForm();
   }
 
   function deleteStockUser(userId) {
@@ -2990,60 +3054,105 @@ export default function App() {
   }
 
   function renderAccessUserForm() {
+    const selectedSectors = getSelectedStockUserSectors();
+    const isEditing = Boolean(editingStockUserId);
+
     return (
-      <>
-        <h2>Cadastrar usuário</h2>
-        <p className="stock-help">Cadastre funcionários do cliente, defina perfil, setor, cargo e dados para notificação no Telegram.</p>
+      <div className="access-user-editor">
+        <div className="access-section-heading">
+          <div>
+            <h2>{isEditing ? "Editar usuário" : "Cadastrar usuário"}</h2>
+            <p className="stock-help">Perfil, setores, permissões e notificações do funcionário.</p>
+          </div>
+          {isEditing && (
+            <button className="secondary" type="button" onClick={resetStockUserForm}>Cancelar edição</button>
+          )}
+        </div>
 
-        <form className="stock-form-grid" onSubmit={saveStockUser}>
-          <label>
-            Nome
-            <input value={stockUserForm.name} onChange={(event) => setStockUserForm({ ...stockUserForm, name: event.target.value })} placeholder="Nome do funcionário" />
-          </label>
+        <form className="access-form-shell" onSubmit={saveStockUser}>
+          <div className="access-form-grid">
+            <label>
+              Nome
+              <input value={stockUserForm.name} onChange={(event) => setStockUserForm({ ...stockUserForm, name: event.target.value })} placeholder="Nome do funcionário" />
+            </label>
 
-          <label>
-            E-mail
-            <input type="email" value={stockUserForm.email} onChange={(event) => setStockUserForm({ ...stockUserForm, email: event.target.value })} placeholder="funcionario@empresa.com" />
-          </label>
+            <label>
+              E-mail
+              <input type="email" value={stockUserForm.email} onChange={(event) => setStockUserForm({ ...stockUserForm, email: event.target.value })} placeholder="funcionario@empresa.com" />
+            </label>
 
-          <label>
-            Senha
-            <input type="password" value={stockUserForm.password} onChange={(event) => setStockUserForm({ ...stockUserForm, password: event.target.value })} placeholder="Senha de acesso" />
-          </label>
+            <label>
+              Senha
+              <input type="password" value={stockUserForm.password} onChange={(event) => setStockUserForm({ ...stockUserForm, password: event.target.value })} placeholder="Senha de acesso" />
+            </label>
 
-          <label>
-            Perfil
-            <select value={stockUserForm.profile} onChange={(event) => setStockUserForm({ ...stockUserForm, profile: event.target.value })}>
-              <option>Operação</option>
-              <option>Gestor</option>
-              <option>Administrador</option>
-            </select>
-          </label>
+            <label>
+              Perfil
+              <select
+                value={stockUserForm.profile}
+                onChange={(event) => {
+                  const nextProfile = event.target.value;
+                  const currentSectors = getStockUserSectors();
+                  const nextSectors = nextProfile === "Operação" ? currentSectors.slice(0, 1) : currentSectors;
+                  setStockUserForm({
+                    ...stockUserForm,
+                    profile: nextProfile,
+                    sector: nextSectors[0] || "",
+                    sectors: nextSectors
+                  });
+                }}
+              >
+                <option>Operação</option>
+                <option>Gestor</option>
+                <option>Administrador</option>
+              </select>
+            </label>
 
-          <label>
-            Setor
-            <select value={stockUserForm.sector} onChange={(event) => setStockUserForm({ ...stockUserForm, sector: event.target.value })}>
-              <option value="">Selecione</option>
-              {areas.map((area) => <option key={area}>{area}</option>)}
-            </select>
-          </label>
+            {!isMultiSectorProfile() ? (
+              <label>
+                Setor
+                <select
+                  value={stockUserForm.sector}
+                  onChange={(event) => setStockUserForm({ ...stockUserForm, sector: event.target.value, sectors: event.target.value ? [event.target.value] : [] })}
+                >
+                  <option value="">Selecione</option>
+                  {areas.map((area) => <option key={area}>{area}</option>)}
+                </select>
+              </label>
+            ) : (
+              <div className="access-sector-box">
+                <strong>Setores</strong>
+                <div className="access-sector-grid">
+                  {areas.map((area) => (
+                    <label key={area} className={selectedSectors.includes(area) ? "access-sector-option active" : "access-sector-option"}>
+                      <input
+                        type="checkbox"
+                        checked={selectedSectors.includes(area)}
+                        onChange={() => toggleStockUserSector(area)}
+                      />
+                      <span>{area}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
-          <label>
-            Cargo
-            <input value={stockUserForm.role} onChange={(event) => setStockUserForm({ ...stockUserForm, role: event.target.value })} placeholder="Ex: Cozinheiro, Gerente, Auxiliar" />
-          </label>
+            <label>
+              Cargo
+              <input value={stockUserForm.role} onChange={(event) => setStockUserForm({ ...stockUserForm, role: event.target.value })} placeholder="Ex: Cozinheiro, Gerente, Auxiliar" />
+            </label>
 
-          <label>
-            Status
-            <select value={stockUserForm.status} onChange={(event) => setStockUserForm({ ...stockUserForm, status: event.target.value })}>
-              <option>Ativo</option>
-              <option>Inativo</option>
-            </select>
-          </label>
+            <label>
+              Status
+              <select value={stockUserForm.status} onChange={(event) => setStockUserForm({ ...stockUserForm, status: event.target.value })}>
+                <option>Ativo</option>
+                <option>Inativo</option>
+              </select>
+            </label>
+          </div>
 
           <div className="module-permission-box">
             <strong>Permissões de módulo</strong>
-            <small>Defina quais funcionalidades este funcionário poderá acessar.</small>
 
             <div className="module-permission-grid">
               {SOLUTION_MODULES.filter((module) => module.id !== "acesso").map((module) => (
@@ -3092,9 +3201,12 @@ export default function App() {
             )}
           </div>
 
-          <button className="primary" type="submit">Cadastrar funcionário</button>
+          <div className="access-form-actions">
+            <button className="primary" type="submit">{isEditing ? "Salvar alterações" : "Cadastrar funcionário"}</button>
+            {isEditing && <button className="secondary" type="button" onClick={resetStockUserForm}>Cancelar</button>}
+          </div>
         </form>
-      </>
+      </div>
     );
   }
 
@@ -3255,7 +3367,7 @@ export default function App() {
     if (!confirm("Deseja excluir esta área/departamento?")) return;
 
     const usedInActivities = stockItems.some((item) => item.area === name);
-    const usedInUsers = stockUsers.some((user) => user.sector === name);
+    const usedInUsers = stockUsers.some((user) => getStockUserSectors(user).includes(name));
 
     if (usedInActivities || usedInUsers) {
       alert("Não é possível excluir uma área vinculada a usuário ou processo/atividade.");
@@ -3770,11 +3882,27 @@ export default function App() {
   }
 
   function renderAccessModule() {
+    const activeUsers = stockUsers.filter((user) => user.status === "Ativo").length;
+    const managerUsers = stockUsers.filter((user) => user.profile === "Gestor" || user.profile === "Administrador").length;
+    const telegramUsers = stockUsers.filter((user) => user.telegramEnabled).length;
+
     return (
       <OperationalModuleLayout className="access-workspace" items={[{ id: "cadastros", label: "Cadastros" }]} page="cadastros" onNavigate={() => {}}>
-        <section className="module-content stock-wide">
-          <h2>Gestão de acesso</h2>
-          <p className="stock-help">Selecione se deseja cadastrar usuário ou processo/atividade.</p>
+        <section className="module-content stock-wide access-command-center">
+          <div className="access-section-heading">
+            <div>
+              <h2>Gestão de acesso</h2>
+              <p className="stock-help">Usuários, áreas e rotinas operacionais do cliente.</p>
+            </div>
+          </div>
+
+          <div className="access-overview-grid">
+            <MiniDashCard title="Usuários" value={stockUsers.length} detail="Cadastrados" />
+            <MiniDashCard title="Ativos" value={activeUsers} detail="Com acesso liberado" />
+            <MiniDashCard title="Gestores" value={managerUsers} detail="Perfis de liderança" />
+            <MiniDashCard title="Telegram" value={telegramUsers} detail="Notificações ativas" />
+          </div>
+
           {renderAccessCadastroSelector()}
         </section>
 
@@ -3815,13 +3943,22 @@ export default function App() {
                           <td><strong>{user.name}</strong></td>
                           <td>{user.email}</td>
                           <td>{user.profile}</td>
-                          <td>{user.sector}</td>
+                          <td>
+                            <div className="access-sector-chip-list">
+                              {getStockUserSectors(user).length
+                                ? getStockUserSectors(user).map((sector) => (
+                                  <span className="access-sector-chip" key={sector}>{sector}</span>
+                                ))
+                                : <span className="access-sector-chip">Sem setor</span>}
+                            </div>
+                          </td>
                           <td>{user.role}</td>
                           <td>{(user.allowedModules || ["checklist"]).map((moduleId) => SOLUTION_MODULES.find((module) => module.id === moduleId)?.title).filter(Boolean).join(", ")}</td>
                           <td>{user.telegramEnabled ? "Ativo" : "Não"}</td>
                           <td>{user.status}</td>
                           <td>
                             <div className="actions">
+                              <button className="secondary" onClick={() => editStockUser(user)}>Editar</button>
                               {user.telegramEnabled && <button className="secondary" onClick={() => testTelegramUser(user)}>Testar Telegram</button>}
                               <button className="danger" onClick={() => deleteStockUser(user.id)}>Excluir</button>
                             </div>

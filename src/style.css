@@ -2942,3 +2942,150 @@ td {
     max-width: 100%;
   }
 }
+
+/* V34 - Gestao de acesso */
+.access-command-center {
+  display: grid;
+  gap: 16px;
+}
+
+.access-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.access-section-heading h2,
+.access-section-heading p {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.access-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.access-user-editor {
+  display: grid;
+  gap: 16px;
+}
+
+.access-form-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.access-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.access-form-grid label,
+.access-sector-box {
+  display: grid;
+  gap: 7px;
+  font-weight: 800;
+  color: var(--blue);
+}
+
+.access-form-grid input,
+.access-form-grid select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #d8d1c5;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  color: #1c1c1c;
+  font-size: 14px;
+}
+
+.access-sector-box {
+  grid-column: span 2;
+  background: #fff;
+  border: 1px solid #eee0d0;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.access-sector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.access-sector-option {
+  border: 1px solid #d8d1c5;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fdfbf5;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  color: var(--blue);
+}
+
+.access-sector-option.active {
+  background: #e9f1f8;
+  border-color: var(--blue);
+}
+
+.access-sector-option input {
+  width: auto;
+  min-height: auto;
+}
+
+.access-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.access-sector-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 170px;
+}
+
+.access-sector-chip {
+  background: #f3ead8;
+  border: 1px solid #eadbbd;
+  border-radius: 999px;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 900;
+  padding: 5px 8px;
+  line-height: 1.1;
+}
+
+@media (max-width: 980px) {
+  .access-overview-grid,
+  .access-form-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .access-sector-box {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .access-section-heading,
+  .access-form-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .access-overview-grid,
+  .access-form-grid,
+  .access-sector-grid {
+    grid-template-columns: 1fr;
+  }
+}
