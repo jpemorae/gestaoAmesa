@@ -1085,6 +1085,11 @@ export default function App() {
       setStockCadastroType("produto");
       return;
     }
+
+    if (type === "category") {
+      setStockCadastroType("categoria");
+      return;
+    }
   }
 
   function inactivateStockItem(itemId) {
@@ -1795,7 +1800,8 @@ export default function App() {
 
   function renderStockCadastro() {
     const stockCadastroActions = [
-      { id: "product", title: "Novo produto", detail: "Produto, item, unidade, categoria, custo e status.", button: "Novo produto", variant: "primary" }
+      { id: "product", type: "produto", title: "Cadastro de produto", detail: "Produto, item, unidade, categoria, custo e status.", button: "Cadastro de produto", variant: "primary" },
+      { id: "category", type: "categoria", title: "Cadastro de categoria", detail: "Crie e organize categorias usadas nos produtos e itens.", button: "Cadastro de categoria", variant: "primary" }
     ];
 
     return (
@@ -1810,7 +1816,10 @@ export default function App() {
 
           <div className="stock-action-grid">
             {stockCadastroActions.map((action) => (
-              <article className="stock-action-card" key={action.id}>
+              <article
+                className={stockCadastroType === action.type ? "stock-action-card active" : "stock-action-card"}
+                key={action.id}
+              >
                 <div>
                   <strong>{action.title}</strong>
                   <small>{action.detail}</small>
@@ -1958,7 +1967,11 @@ export default function App() {
                 </button>
               )}
             </form>
+          </section>
+        )}
 
+        {stockCadastroType === "categoria" && (
+          <section className="module-content stock-wide">
             <div className="category-mini-box">
               <strong>Categorias</strong>
               <form className="stock-inline-form" onSubmit={addStockCategory}>

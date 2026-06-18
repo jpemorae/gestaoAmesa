@@ -1006,7 +1006,7 @@ td {
 
 .stock-action-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 340px);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 340px));
   gap: 12px;
 }
 
@@ -1043,6 +1043,11 @@ td {
   width: 100%;
   min-height: 42px;
   border-radius: 10px;
+}
+
+.stock-action-card.active {
+  border-color: var(--blue);
+  box-shadow: 0 10px 22px rgba(11, 47, 79, 0.10);
 }
 
 .stock-filter-grid {
