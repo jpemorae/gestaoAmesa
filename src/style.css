@@ -3089,3 +3089,141 @@ td {
     grid-template-columns: 1fr;
   }
 }
+
+/* V35 - Card de cliente cadastrado */
+.client-card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.visual-client-card {
+  max-width: none;
+  min-height: 100%;
+  border-color: #eadbbd;
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  background: #fffdf8;
+  box-shadow: 0 10px 24px rgba(11, 47, 79, 0.06);
+}
+
+.visual-client-top {
+  position: relative;
+  min-height: 112px;
+  padding: 14px;
+  background: linear-gradient(180deg, #f6eddc 0%, #fff8ec 100%);
+  border-bottom: 1px solid #eadbbd;
+}
+
+.visual-client-logo {
+  width: 100%;
+  height: 84px;
+  border-radius: 10px;
+  background: #fffaf0;
+  border-color: #d5a23a;
+}
+
+.visual-client-logo span {
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.client-status-pill {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  border: 1px solid transparent;
+  background: #fff;
+}
+
+.client-status-pill.active {
+  color: #137333;
+  background: #e9f7ef;
+  border-color: #b7e1c1;
+}
+
+.client-status-pill.inactive {
+  color: #666;
+  background: #f0f0f0;
+  border-color: #dedede;
+}
+
+.visual-client-body {
+  gap: 12px;
+  padding: 14px;
+}
+
+.visual-client-title {
+  display: grid;
+  gap: 3px;
+}
+
+.visual-client-title strong {
+  color: var(--blue);
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.visual-client-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.client-billing-pill {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: #eef4f8;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.client-module-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.client-module-chip {
+  border: 1px solid #eadbbd;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 8px;
+  line-height: 1.1;
+}
+
+.visual-client-footer {
+  margin-top: 2px;
+  padding-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: stretch;
+}
+
+.visual-client-footer button {
+  min-height: 44px;
+  border-radius: 10px;
+}
+
+.visual-client-footer button:first-child {
+  background: var(--blue);
+  color: #fff;
+}
+
+@media (max-width: 760px) {
+  .client-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .visual-client-footer {
+    grid-template-columns: 1fr;
+  }
+}
