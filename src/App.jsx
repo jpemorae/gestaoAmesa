@@ -2180,9 +2180,13 @@ export default function App() {
                     </td>
                     <td>
                       {item.type === "Produto" || item.type === "Item" ? (
-                        <div className="table-actions">
-                          <button className="secondary" type="button" onClick={() => editStockItem(item)}>Editar</button>
-                        </div>
+                        <details className="table-action-menu">
+                          <summary>⚙️ Ações</summary>
+                          <div className="table-action-menu-list">
+                            <button type="button" onClick={() => editStockItem(item)}>Editar</button>
+                            <button type="button" className="danger-action" onClick={() => inactivateStockItem(item.id)}>Excluir</button>
+                          </div>
+                        </details>
                       ) : "--"}
                     </td>
                   </tr>
