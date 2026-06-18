@@ -404,7 +404,7 @@ export default function App() {
     telegramUsername: "",
     telegramChatId: "",
     telegramPhone: "",
-    allowedModules: ["checklist"]
+    allowedModules: ["checklist", "acesso"]
   });
   const [editingStockUserId, setEditingStockUserId] = useState(null);
 
@@ -455,7 +455,10 @@ export default function App() {
     event.preventDefault();
 
     const fallbackUsers = [
-      ...users,
+      ...users.map((user) => {
+        const initialUser = initialUsers.find((current) => current.email.toLowerCase() === user.email?.toLowerCase());
+        return initialUser && !user.password ? { ...initialUser, ...user, password: initialUser.password } : user;
+      }),
       ...initialUsers.filter((initialUser) => !users.some((user) => user.email?.toLowerCase() === initialUser.email.toLowerCase()))
     ];
     const fallbackClients = [
@@ -1467,7 +1470,7 @@ export default function App() {
       telegramUsername: "",
       telegramChatId: "",
       telegramPhone: "",
-      allowedModules: ["checklist"]
+      allowedModules: ["checklist", "acesso"]
     });
     setEditingStockUserId(null);
   }
@@ -1501,43 +1504,47 @@ export default function App() {
       telegramUsername: user.telegramUsername || "",
       telegramChatId: user.telegramChatId || "",
       telegramPhone: user.telegramPhone || "",
-      allowedModules: user.allowedModules || ["checklist"]
+      allowedModules: user.allowedModules || ["checklist", "acesso"]
     });
   }
 
-  function saveStockUser(event) {
+  async function saveStockUser(event) {
     event.preventDefault();
 
     const selectedSectors = getSelectedStockUserSectors();
+    const currentClient = getCurrentClient();
+    const currentCompanyId = currentClient?.id || activeCompanyId;
 
     if (!stockUserForm.name.trim()) return alert("Informe o nome do usuário.");
     if (!stockUserForm.email.trim()) return alert("Informe o e-mail do usuário.");
-    if (!stockUserForm.password.trim()) return alert("Informe a senha do usuário.");
+    if (!editingStockUserId && !stockUserForm.password.trim()) return alert("Informe a senha do usuário.");
     if (!selectedSectors.length) return alert("Informe ao menos um setor.");
     if (!stockUserForm.role.trim()) return alert("Informe o cargo.");
+    if (!currentCompanyId) return alert("Selecione uma empresa antes de cadastrar usuário.");
 
     if (stockUserForm.telegramEnabled && !stockUserForm.telegramChatId.trim()) {
       return alert("Informe o Chat ID do Telegram para ativar notificações.");
     }
 
-    const emailExists = stockUsers.some((user) => user.id !== editingStockUserId && (user.email || "").toLowerCase() === stockUserForm.email.toLowerCase());
+    const emailExists = users.some((user) => user.id !== editingStockUserId && (user.email || "").toLowerCase() === stockUserForm.email.toLowerCase());
     if (emailExists) return alert("Já existe um usuário com este e-mail.");
 
     const newUserId = editingStockUserId || crypto.randomUUID();
-    const currentClient = getCurrentClient();
+    const existingStockUser = stockUsers.find((user) => user.id === editingStockUserId) || users.find((user) => user.id === editingStockUserId);
     const userRecord = {
       id: newUserId,
       ...stockUserForm,
+      password: stockUserForm.password || existingStockUser?.password || "",
       sector: selectedSectors[0] || "",
       sectors: selectedSectors,
       userType: "client",
-      companyId: currentClient?.id || "cliente-divino-botequim",
+      companyId: currentCompanyId,
       updatedAt: new Date().toLocaleDateString("pt-BR")
     };
 
     const employeeRecord = {
       ...userRecord,
-      createdAt: stockUsers.find((user) => user.id === editingStockUserId)?.createdAt || new Date().toLocaleDateString("pt-BR")
+      createdAt: existingStockUser?.createdAt || new Date().toLocaleDateString("pt-BR")
     };
 
     setStockUsers(editingStockUserId
@@ -1549,6 +1556,15 @@ export default function App() {
       ...userRecord,
       createdAt: users.find((user) => user.id === editingStockUserId)?.createdAt || new Date().toLocaleDateString("pt-BR")
     };
+
+    if (canUseAppDataApi()) {
+      try {
+        await saveAppUser(globalUserRecord);
+      } catch (error) {
+        alert(`Não foi possível salvar o usuário no banco: ${error.message}`);
+        return;
+      }
+    }
 
     const userAlreadyExists = users.some((user) => user.id === editingStockUserId);
     setUsers(editingStockUserId && userAlreadyExists
@@ -1563,8 +1579,21 @@ export default function App() {
     resetStockUserForm();
   }
 
-  function deleteStockUser(userId) {
+  async function deleteStockUser(userId) {
     if (!confirm("Deseja excluir este usuário?")) return;
+    const userToDelete = users.find((user) => user.id === userId) || stockUsers.find((user) => user.id === userId);
+    if (userToDelete?.userType !== "client" || userToDelete?.companyId !== activeCompanyId) {
+      alert("Você só pode excluir usuários da sua própria empresa.");
+      return;
+    }
+    if (canUseAppDataApi()) {
+      try {
+        await removeAppUser(userId);
+      } catch (error) {
+        alert(`Não foi possível excluir o usuário no banco: ${error.message}`);
+        return;
+      }
+    }
     setStockUsers(stockUsers.filter((user) => user.id !== userId));
     setUsers(users.filter((user) => user.id !== userId));
   }
@@ -3201,6 +3230,8 @@ export default function App() {
   function renderAccessUserForm() {
     const selectedSectors = getSelectedStockUserSectors();
     const isEditing = Boolean(editingStockUserId);
+    const contractedModuleIds = getCurrentClient()?.enabledModules || SOLUTION_MODULES.map((module) => module.id);
+    const permissionModules = SOLUTION_MODULES.filter((module) => contractedModuleIds.includes(module.id));
 
     return (
       <div className="access-user-editor">
@@ -3300,7 +3331,7 @@ export default function App() {
             <strong>Permissões de módulo</strong>
 
             <div className="module-permission-grid">
-              {SOLUTION_MODULES.filter((module) => module.id !== "acesso").map((module) => (
+              {permissionModules.map((module) => (
                 <label key={module.id} className="module-permission-option">
                   <input
                     type="checkbox"
@@ -4029,7 +4060,11 @@ export default function App() {
   function renderAccessModule() {
     const productCadastros = stockItems.filter((item) => item.type === "Produto" || item.type === "Item").length;
     const processCadastros = stockItems.filter((item) => item.type === "Processo" || item.type === "Atividade").length;
-    const activeUsers = stockUsers.filter((user) => user.status === "Ativo").length;
+    const currentCompanyId = getCurrentClient()?.id || activeCompanyId;
+    const companyUsers = users.filter((user) => user.userType === "client" && user.companyId === currentCompanyId);
+    const visibleStockUsers = [...stockUsers, ...companyUsers.filter((user) => !stockUsers.some((stockUser) => stockUser.id === user.id))]
+      .filter((user) => (user.companyId || currentCompanyId) === currentCompanyId);
+    const activeUsers = visibleStockUsers.filter((user) => user.status === "Ativo").length;
 
     return (
       <OperationalModuleLayout className="access-workspace" items={[{ id: "cadastros", label: "Cadastros" }]} page="cadastros" onNavigate={() => {}}>
@@ -4043,7 +4078,7 @@ export default function App() {
 
           <div className="access-overview-grid">
             <MiniDashCard title="Produtos / Itens" value={productCadastros} detail="Base de estoque" />
-            <MiniDashCard title="Usuários" value={stockUsers.length} detail="Cadastrados" />
+            <MiniDashCard title="Usuários" value={visibleStockUsers.length} detail="Cadastrados" />
             <MiniDashCard title="Usuários ativos" value={activeUsers} detail="Com acesso liberado" />
             <MiniDashCard title="Áreas" value={areas.length} detail="Departamentos" />
             <MiniDashCard title="Rotinas" value={processCadastros} detail="Processos e atividades" />
@@ -4066,7 +4101,7 @@ export default function App() {
             <section className="module-content stock-wide">
               <h2>Funcionários cadastrados</h2>
 
-              {stockUsers.length === 0 ? (
+              {visibleStockUsers.length === 0 ? (
                 <div className="module-placeholder">
                   <strong>Nenhum funcionário cadastrado</strong>
                   <p>Cadastre os funcionários do cliente para controlar acessos e notificações.</p>
@@ -4088,7 +4123,7 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {stockUsers.map((user) => (
+                      {visibleStockUsers.map((user) => (
                         <tr key={user.id}>
                           <td><strong>{user.name}</strong></td>
                           <td>{user.email}</td>
@@ -4103,7 +4138,7 @@ export default function App() {
                             </div>
                           </td>
                           <td>{user.role}</td>
-                          <td>{(user.allowedModules || ["checklist"]).map((moduleId) => SOLUTION_MODULES.find((module) => module.id === moduleId)?.title).filter(Boolean).join(", ")}</td>
+                          <td>{(user.allowedModules || ["checklist", "acesso"]).map((moduleId) => SOLUTION_MODULES.find((module) => module.id === moduleId)?.title).filter(Boolean).join(", ")}</td>
                           <td>{user.telegramEnabled ? "Ativo" : "Não"}</td>
                           <td>{user.status}</td>
                           <td>
