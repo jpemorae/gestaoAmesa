@@ -1006,7 +1006,7 @@ td {
 
 .stock-action-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  grid-template-columns: minmax(220px, 340px);
   gap: 12px;
 }
 

@@ -1083,8 +1083,6 @@ export default function App() {
       setStockCadastroType("produto");
       return;
     }
-
-    openStockModal(type);
   }
 
   function inactivateStockItem(itemId) {
@@ -1795,13 +1793,7 @@ export default function App() {
 
   function renderStockCadastro() {
     const stockCadastroActions = [
-      { id: "product", title: "Novo produto", detail: "Produto, item, unidade, categoria e custo.", button: "Cadastrar", variant: "primary" },
-      { id: "entry", title: "Nova entrada", detail: "Lote, quantidade, fornecedor, validade e local.", button: "Registrar", variant: "primary" },
-      { id: "exit", title: "Nova saída", detail: "Baixa manual de estoque com motivo.", button: "Dar baixa", variant: "secondary" },
-      { id: "transfer", title: "Transferir", detail: "Movimente saldo entre locais internos.", button: "Transferir", variant: "secondary" },
-      { id: "inventory", title: "Inventário", detail: "Ajuste saldo contado e registre divergências.", button: "Contar", variant: "secondary" },
-      { id: "loss", title: "Registrar perda", detail: "Descarte com motivo, valor e responsável.", button: "Registrar", variant: "danger" },
-      { id: "movements", title: "Movimentações", detail: "Consulte entradas, saídas e ajustes.", button: "Ver histórico", variant: "secondary" }
+      { id: "product", title: "Novo produto", detail: "Produto, item, unidade, categoria, custo e status.", button: "Novo produto", variant: "primary" }
     ];
 
     return (
@@ -1810,7 +1802,7 @@ export default function App() {
           <div className="stock-title-row">
             <div>
               <h2>Cadastro</h2>
-              <p className="stock-help">Central de cadastro e ações manuais do estoque.</p>
+              <p className="stock-help">Cadastre e edite a base de produtos e itens.</p>
             </div>
           </div>
 
@@ -1836,7 +1828,7 @@ export default function App() {
         {stockCadastroType === "produto" && (
           <section className="module-content stock-wide">
             <h2>{editingStockItemId ? "Editar produto ou item" : "Cadastrar produto ou item"}</h2>
-            <p className="stock-help">Informe os dados fixos do produto. Saldo, lote e validade entram pelas ações de entrada, saída e inventário acima.</p>
+            <p className="stock-help">Informe os dados fixos do produto. Entradas, saídas, transferências e inventário ficam na tela Estoque.</p>
 
             <form className="stock-form-grid" onSubmit={saveStockItem}>
               <label>
@@ -2563,7 +2555,15 @@ export default function App() {
           <div className="stock-title-row">
             <div>
               <h2>Gestão de estoque</h2>
-              <p className="stock-help">Acompanhe saldos, validade, filtros e situação atual dos produtos.</p>
+              <p className="stock-help">Controle entradas, saídas, transferências, inventário, validade e perdas financeiras.</p>
+            </div>
+            <div className="stock-title-actions">
+              <button className="primary" type="button" onClick={() => openStockModal("entry")}>Nova Entrada</button>
+              <button className="secondary" type="button" onClick={() => openStockModal("exit")}>Nova Saída</button>
+              <button className="secondary" type="button" onClick={() => openStockModal("transfer")}>Transferir</button>
+              <button className="secondary" type="button" onClick={() => openStockModal("inventory")}>Inventário</button>
+              <button className="danger" type="button" onClick={() => openStockModal("loss")}>Registrar Perda</button>
+              <button className="secondary" type="button" onClick={() => openStockModal("movements")}>Ver Movimentações</button>
             </div>
           </div>
         </section>
