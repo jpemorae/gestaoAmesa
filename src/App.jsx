@@ -379,6 +379,7 @@ export default function App() {
   const [labelConsumeCode, setLabelConsumeCode] = useState("");
   const [labelConsumeArea, setLabelConsumeArea] = useState("");
   const [labelConsumeOperator, setLabelConsumeOperator] = useState("");
+  const [labelProductSearch, setLabelProductSearch] = useState("");
   const [labelPage, setLabelPage] = useState("operacional");
   const [qrActionCode, setQrActionCode] = useState("");
   const [qrActionArea, setQrActionArea] = useState("");
@@ -3784,6 +3785,7 @@ export default function App() {
 
     setLabelsHistory([...createdLabels, ...labelsHistory]);
     setLabelForm({ itemId: "", quantity: "", quantityUnit: "g", labelCount: 1, issuedAt: today(), expiryDate: "" });
+    setLabelProductSearch("");
     alert("Etiqueta gerada. O estoque NÃO foi baixado. A baixa ocorrerá apenas na leitura do QRCode.");
   }
 
@@ -3867,6 +3869,20 @@ export default function App() {
     const selectedItem = getLabelItem();
     const compatibleUnits = compatibleUnitsFor(selectedItem?.unit || "g");
     const isLabelsDash = labelPage === "dash";
+    const labelProductOptions = stockItemsView
+      .filter((item) => item.type === "Produto" || item.type === "Item")
+      .map((item) => ({
+        item,
+        label: `${item.name} | ${item.category} | ${item.internalCode || item.barcode || "sem código"} | Estoque: ${formatStockDisplay(item.totalStock, item.stockUnit)}`
+      }));
+
+    function selectLabelProduct(value) {
+      const selectedOption = labelProductOptions.find((option) => option.label === value);
+      const selected = selectedOption?.item || stockItemsView.find((item) => item.id === value);
+      const firstUnit = compatibleUnitsFor(selected?.unit || "g")[0];
+      setLabelProductSearch(value);
+      setLabelForm({ ...labelForm, itemId: selected?.id || "", quantityUnit: firstUnit });
+    }
 
     return (
       <section className="stock-workspace labels-workspace">
@@ -3939,21 +3955,22 @@ export default function App() {
                 <form className="stock-form-grid" onSubmit={saveLabels}>
               <label>
                 Produto / Item
-                <select
-                  value={labelForm.itemId}
-                  onChange={(event) => {
-                    const selected = stockItemsView.find((item) => item.id === event.target.value);
-                    const firstUnit = compatibleUnitsFor(selected?.unit || "g")[0];
-                    setLabelForm({ ...labelForm, itemId: event.target.value, quantityUnit: firstUnit });
-                  }}
-                >
-                  <option value="">Selecione</option>
-                  {stockItemsView
-                    .filter((item) => item.type === "Produto" || item.type === "Item")
-                    .map((item) => (
-                      <option key={item.id} value={item.id}>{item.name} - Estoque: {formatStockDisplay(item.totalStock, item.stockUnit)}</option>
-                    ))}
-                </select>
+                <input
+                  list="label-product-options"
+                  value={labelProductSearch}
+                  onChange={(event) => selectLabelProduct(event.target.value)}
+                  placeholder="Busque por produto, código ou categoria..."
+                />
+                <datalist id="label-product-options">
+                  {labelProductOptions.map((option) => (
+                    <option key={option.item.id} value={option.label} />
+                  ))}
+                </datalist>
+                {selectedItem && (
+                  <small className="smart-filter-hint">
+                    {selectedItem.category} • Estoque: {formatStockDisplay(selectedItem.totalStock, selectedItem.stockUnit)}
+                  </small>
+                )}
               </label>
 
               <label>

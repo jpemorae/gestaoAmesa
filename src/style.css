@@ -2574,6 +2574,12 @@ td {
   gap: 14px;
 }
 
+.smart-filter-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .label-card {
   background: #fff;
   border: 2px solid var(--blue);
