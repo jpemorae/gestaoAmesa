@@ -62,6 +62,21 @@ import {
 import { getQrActionUrl } from "./utils/qr";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { useTenantPersistentState } from "./hooks/useTenantPersistentState";
+
+function StockModal({ title, children, onClose }) {
+  return (
+    <div className="stock-modal-backdrop">
+      <section className="stock-modal">
+        <div className="stock-modal-header">
+          <h2>{title}</h2>
+          <button className="secondary" type="button" onClick={onClose}>Fechar</button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
 export default function App() {
   const [isLogged, setIsLogged] = useState(false);
   const [loggedUser, setLoggedUser] = useState(null);
@@ -2390,20 +2405,6 @@ export default function App() {
     );
   }
 
-  function StockModal({ title, children, onClose = closeStockModal }) {
-    return (
-      <div className="stock-modal-backdrop">
-        <section className="stock-modal">
-          <div className="stock-modal-header">
-            <h2>{title}</h2>
-            <button className="secondary" type="button" onClick={onClose}>Fechar</button>
-          </div>
-          {children}
-        </section>
-      </div>
-    );
-  }
-
   function productOptions() {
     return activeStockProducts().map((item) => (
       <option key={item.id} value={item.id}>{item.name} - {item.category}</option>
@@ -2416,7 +2417,7 @@ export default function App() {
 
   function renderStockProductModal() {
     return (
-      <StockModal title={editingStockItemId ? "Editar produto ou item" : "Novo produto"}>
+      <StockModal title={editingStockItemId ? "Editar produto ou item" : "Novo produto"} onClose={closeStockModal}>
         <p className="stock-help stock-modal-help">Informe os dados fixos do produto. Entradas, saídas, transferências e inventário ficam na tela Estoque.</p>
         <form className="stock-form-grid stock-modal-form" onSubmit={saveStockItem}>
           <label>
@@ -2502,7 +2503,7 @@ export default function App() {
     const item = selectedStockModalItem(stockEntryForm);
     const compatibleUnits = compatibleUnitsFor(item?.unit || "g");
     return (
-      <StockModal title={editingStockLotId ? "Editar entrada" : "Nova entrada"}>
+      <StockModal title={editingStockLotId ? "Editar entrada" : "Nova entrada"} onClose={closeStockModal}>
         <form className="stock-form-grid stock-modal-form" onSubmit={saveStockEntryAdvanced}>
           <label>
             Produto
@@ -2565,7 +2566,7 @@ export default function App() {
     const item = selectedStockModalItem(stockExitForm);
     const compatibleUnits = compatibleUnitsFor(item?.unit || "g");
     return (
-      <StockModal title="Nova saída">
+      <StockModal title="Nova saída" onClose={closeStockModal}>
         <form className="stock-form-grid stock-modal-form" onSubmit={saveStockExit}>
           <label>
             Produto
@@ -2616,7 +2617,7 @@ export default function App() {
     const item = selectedStockModalItem(stockTransferForm);
     const compatibleUnits = compatibleUnitsFor(item?.unit || "g");
     return (
-      <StockModal title="Transferir entre locais">
+      <StockModal title="Transferir entre locais" onClose={closeStockModal}>
         <form className="stock-form-grid stock-modal-form" onSubmit={saveStockTransfer}>
           <label>
             Produto
@@ -2670,7 +2671,7 @@ export default function App() {
     const counted = toBaseUnit(stockInventoryForm.countedQuantity, stockInventoryForm.quantityUnit);
     const difference = stockInventoryForm.countedQuantity ? counted.quantity - expected : 0;
     return (
-      <StockModal title="Inventário">
+      <StockModal title="Inventário" onClose={closeStockModal}>
         <form className="stock-form-grid stock-modal-form" onSubmit={saveStockInventory}>
           <label>
             Produto
@@ -2727,7 +2728,7 @@ export default function App() {
     const item = selectedStockModalItem(stockLossForm);
     const compatibleUnits = compatibleUnitsFor(item?.unit || "g");
     return (
-      <StockModal title="Registrar perda">
+      <StockModal title="Registrar perda" onClose={closeStockModal}>
         <form className="stock-form-grid stock-modal-form" onSubmit={saveStockLoss}>
           <label>
             Produto
@@ -2784,7 +2785,7 @@ export default function App() {
 
   function renderStockMovementsModal() {
     return (
-      <StockModal title="Histórico de movimentações">
+      <StockModal title="Histórico de movimentações" onClose={closeStockModal}>
         <div className="stock-table-wrap stock-modal-table">
           <table>
             <thead>
