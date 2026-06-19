@@ -1436,6 +1436,10 @@ td {
   color: var(--blue);
 }
 
+.category-modal-box {
+  margin-top: 0;
+}
+
 .checklist-card-list {
   display: grid;
   gap: 12px;

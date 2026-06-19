@@ -222,6 +222,9 @@ export default function App() {
   ], legacyCompanyId);
   const [stockSearch, setStockSearch] = useState("");
   const [stockCategoryName, setStockCategoryName] = useState("");
+  const [showStockCategoryModal, setShowStockCategoryModal] = useState(false);
+  const [stockSupplierName, setStockSupplierName] = useState("");
+  const [showStockSupplierModal, setShowStockSupplierModal] = useState(false);
   const [stockAlertDays, setStockAlertDays] = useState(2);
   const [stockFilters, setStockFilters] = useState({ category: "Todos", supplier: "Todos", location: "Todos", status: "Todos" });
   const [stockQuickFilter, setStockQuickFilter] = useState("todos");
@@ -339,6 +342,7 @@ export default function App() {
   }
   const [stockEntryForm, setStockEntryForm] = useState({
     itemId: "",
+    categoryId: "",
     quantity: "",
     quantityUnit: "g",
     supplier: "",
@@ -349,6 +353,8 @@ export default function App() {
     note: "",
     invoiceFileName: ""
   });
+  const [stockEntryCategorySearch, setStockEntryCategorySearch] = useState("");
+  const [stockEntryProductSearch, setStockEntryProductSearch] = useState("");
   const [stockExitForm, setStockExitForm] = useState({
     itemId: "",
     quantity: "",
@@ -925,6 +931,7 @@ export default function App() {
     setStockCategories(nextCategories);
     await persistStockCatalog(nextCategories, stockItems);
     setStockCategoryName("");
+    setShowStockCategoryModal(false);
   }
 
   async function deleteStockCategory(categoryId) {
@@ -935,6 +942,27 @@ export default function App() {
     const nextCategories = stockCategories.filter((category) => category.id !== categoryId);
     setStockCategories(nextCategories);
     await persistStockCatalog(nextCategories, stockItems);
+  }
+
+  function addStockSupplier(event) {
+    event.preventDefault();
+    const name = stockSupplierName.trim();
+    if (!name) return alert("Informe o nome do fornecedor.");
+    if (stockSuppliers.some((supplier) => supplier.toLowerCase() === name.toLowerCase())) {
+      return alert("Fornecedor já cadastrado.");
+    }
+    setStockSuppliers([...stockSuppliers, name]);
+    setStockSupplierName("");
+    setShowStockSupplierModal(false);
+  }
+
+  function deleteStockSupplier(name) {
+    if (stockLots.some((lot) => lot.supplier === name)) {
+      alert("Não é possível excluir fornecedor vinculado a entrada de estoque.");
+      return;
+    }
+    if (!confirm("Deseja excluir este fornecedor?")) return;
+    setStockSuppliers(stockSuppliers.filter((supplier) => supplier !== name));
   }
 
   async function saveStockItem(event) {
@@ -1091,7 +1119,21 @@ export default function App() {
   }
 
   function resetStockEntryForm() {
-    setStockEntryForm({ itemId: "", quantity: "", quantityUnit: "g", expiryDate: "" });
+    setStockEntryForm({
+      itemId: "",
+      categoryId: "",
+      quantity: "",
+      quantityUnit: "g",
+      supplier: "",
+      batchCode: "",
+      expiryDate: "",
+      unitCost: "",
+      location: "Estoque seco",
+      note: "",
+      invoiceFileName: ""
+    });
+    setStockEntryCategorySearch("");
+    setStockEntryProductSearch("");
     setEditingStockLotId(null);
     setShowStockEntryForm(false);
   }
@@ -1102,15 +1144,26 @@ export default function App() {
   }
 
   function editStockLot(lot) {
+    const item = stockItemsView.find((currentItem) => currentItem.id === lot.itemId);
+    const category = stockCategories.find((currentCategory) => currentCategory.id === item?.categoryId);
     setEditingStockLotId(lot.id);
     setShowStockEntryForm(true);
     setStockPage("estoque");
     setStockEntryForm({
       itemId: lot.itemId || "",
+      categoryId: item?.categoryId || "",
       quantity: lot.inputQuantity ?? lot.quantity ?? "",
       quantityUnit: lot.inputUnit || lot.unit || "g",
-      expiryDate: lot.expiryDate || ""
+      supplier: lot.supplier || "",
+      batchCode: lot.batchCode || "",
+      expiryDate: lot.expiryDate || "",
+      unitCost: lot.unitCost || "",
+      location: lot.location || "Estoque seco",
+      note: lot.note || "",
+      invoiceFileName: lot.invoiceFileName || ""
     });
+    setStockEntryCategorySearch(category ? category.name : item?.category || "");
+    setStockEntryProductSearch(item ? `${item.name} | ${item.category} | ${item.internalCode || item.barcode || "sem código"}` : "");
   }
 
   function currentOperatorName() {
@@ -1213,6 +1266,9 @@ export default function App() {
       if (item) editStockItem(item);
       else resetStockItemForm();
     }
+    if (type === "entry" && !editingStockLotId) {
+      resetStockEntryForm();
+    }
     setStockModal(type);
   }
 
@@ -1228,11 +1284,13 @@ export default function App() {
     if (type === "product") {
       resetStockItemForm();
       setStockCadastroType("produto");
+      setStockModal("product");
       return;
     }
 
     if (type === "category") {
       setStockCadastroType("categoria");
+      setShowStockCategoryModal(true);
       return;
     }
   }
@@ -1305,13 +1363,18 @@ export default function App() {
     const converted = toBaseUnit(stockEntryForm.quantity, stockEntryForm.quantityUnit);
     if (!item || converted.unit !== item.stockUnit) return alert("Unidade incompatível com o produto.");
     if (item.controlsExpiry !== "Não" && !stockEntryForm.expiryDate) return alert("Informe a validade.");
+    if (!stockEntryForm.supplier.trim()) return alert("Selecione um fornecedor cadastrado.");
+    if (!stockSuppliers.some((supplier) => supplier.toLowerCase() === stockEntryForm.supplier.trim().toLowerCase())) {
+      return alert("Fornecedor não cadastrado. Cadastre o fornecedor antes de registrar a entrada.");
+    }
 
-    const supplier = ensureSupplier(stockEntryForm.supplier);
+    const supplier = stockSuppliers.find((item) => item.toLowerCase() === stockEntryForm.supplier.trim().toLowerCase()) || stockEntryForm.supplier.trim();
     const location = ensureLocation(stockEntryForm.location);
     const unitCost = Number(stockEntryForm.unitCost || item.unitCost || 0);
     const newLot = {
       id: editingStockLotId || crypto.randomUUID(),
       itemId: item.id,
+      categoryId: item.categoryId || stockEntryForm.categoryId || "",
       quantity: converted.quantity,
       initialQuantity: converted.quantity,
       unit: converted.unit,
@@ -1625,6 +1688,16 @@ export default function App() {
 
   function closeAreaDepartmentModal() {
     setShowAreaDepartmentModal(false);
+  }
+
+  function openStockSupplierModal() {
+    setStockSupplierName("");
+    setAccessCadastroType("fornecedor");
+    setShowStockSupplierModal(true);
+  }
+
+  function closeStockSupplierModal() {
+    setShowStockSupplierModal(false);
   }
 
   async function saveStockUser(event) {
@@ -2083,165 +2156,8 @@ export default function App() {
           </div>
         </section>
 
-        {stockCadastroType === "produto" && (
-          <section className="module-content stock-wide">
-            <h2>{editingStockItemId ? "Editar produto ou item" : "Cadastrar produto ou item"}</h2>
-            <p className="stock-help">Informe os dados fixos do produto. Entradas, saídas, transferências e inventário ficam na tela Estoque.</p>
-
-            <form className="stock-form-grid" onSubmit={saveStockItem}>
-              <label>
-                Tipo de cadastro
-                <select
-                  value={stockItemForm.type}
-                  onChange={(event) => setStockItemForm({ ...stockItemForm, type: event.target.value })}
-                >
-                  <option>Produto</option>
-                  <option>Item</option>
-                </select>
-              </label>
-
-              <label>
-                Nome
-                <input
-                  value={stockItemForm.name}
-                  onChange={(event) => setStockItemForm({ ...stockItemForm, name: event.target.value })}
-                  placeholder="Ex: Carne, Arroz, Etiqueta térmica"
-                />
-              </label>
-
-              <label>
-                Código interno
-                <input
-                  value={stockItemForm.internalCode}
-                  onChange={(event) => setStockItemForm({ ...stockItemForm, internalCode: event.target.value })}
-                  placeholder="Ex: INS-001"
-                />
-              </label>
-
-              <label>
-                Código de barras
-                <input
-                  value={stockItemForm.barcode}
-                  onChange={(event) => setStockItemForm({ ...stockItemForm, barcode: event.target.value })}
-                  placeholder="EAN, SKU ou código interno"
-                />
-              </label>
-
-              <label>
-                Categoria
-                <select
-                  value={stockItemForm.categoryId}
-                  onChange={(event) => setStockItemForm({ ...stockItemForm, categoryId: event.target.value })}
-                >
-                  <option value="">Selecione</option>
-                  {stockCategories.map((category) => (
-                    <option key={category.id} value={category.id}>{category.name}</option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="unit-picker-stock">
-                <span>Unidade padrão</span>
-                <div className="unit-buttons-stock">
-                  {["kg", "g", "L", "ml", "un", "pacote", "caixa"].map((unit) => (
-                    <button
-                      type="button"
-                      key={unit}
-                      className={stockItemForm.unit === unit ? "unit-btn-stock active" : "unit-btn-stock"}
-                      onClick={() => setStockItemForm({ ...stockItemForm, unit })}
-                    >
-                      {unitLabel(unit)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <label>
-                Estoque mínimo
-                <input
-                  type="number"
-                  step="0.001"
-                  value={stockItemForm.minStock}
-                  onChange={(event) => setStockItemForm({ ...stockItemForm, minStock: event.target.value })}
-                  placeholder="Ex: 5"
-                />
-              </label>
-
-              <label>
-                Estoque máximo
-                <input
-                  type="number"
-                  step="0.001"
-                  value={stockItemForm.maxStock}
-                  onChange={(event) => setStockItemForm({ ...stockItemForm, maxStock: event.target.value })}
-                  placeholder="Ex: 50"
-                />
-              </label>
-
-              <label>
-                Custo unitário
-                <input
-                  type="number"
-                  step="0.01"
-                  value={stockItemForm.unitCost}
-                  onChange={(event) => setStockItemForm({ ...stockItemForm, unitCost: event.target.value })}
-                  placeholder="Ex: 12.90"
-                />
-              </label>
-
-              <label>
-                Controla validade?
-                <select value={stockItemForm.controlsExpiry} onChange={(event) => setStockItemForm({ ...stockItemForm, controlsExpiry: event.target.value })}>
-                  <option>Sim</option>
-                  <option>Não</option>
-                </select>
-              </label>
-
-              <label>
-                Status
-                <select value={stockItemForm.status} onChange={(event) => setStockItemForm({ ...stockItemForm, status: event.target.value })}>
-                  <option>Ativo</option>
-                  <option>Inativo</option>
-                </select>
-              </label>
-
-              <button className="primary" type="submit">
-                {editingStockItemId ? "Salvar alterações" : "Cadastrar produto/item"}
-              </button>
-              {editingStockItemId && (
-                <button className="secondary" type="button" onClick={() => resetStockItemForm()}>
-                  Cancelar edição
-                </button>
-              )}
-            </form>
-          </section>
-        )}
-
-        {stockCadastroType === "categoria" && (
-          <section className="module-content stock-wide">
-            <div className="category-mini-box">
-              <strong>Categorias</strong>
-              <form className="stock-inline-form" onSubmit={addStockCategory}>
-                <input
-                  value={stockCategoryName}
-                  onChange={(event) => setStockCategoryName(event.target.value)}
-                  placeholder="Criar categoria. Ex: Comida, Bebida, Limpeza"
-                />
-                <button className="primary" type="submit">Criar categoria</button>
-              </form>
-
-              <div className="stock-chip-list">
-                {stockCategories.map((category) => (
-                  <span className="stock-chip" key={category.id}>
-                    {category.name}
-                    <button type="button" onClick={() => deleteStockCategory(category.id)}>×</button>
-                  </span>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
-
+        {stockModal === "product" && renderStockProductModal()}
+        {showStockCategoryModal && renderStockCategoryModal()}
 
       </>
     );
@@ -2499,21 +2415,129 @@ export default function App() {
     );
   }
 
+  function renderStockCategoryModal() {
+    return (
+      <StockModal title="Cadastro de categoria" onClose={() => setShowStockCategoryModal(false)}>
+        <div className="stock-modal-table">
+          <div className="category-mini-box category-modal-box">
+            <strong>Categorias</strong>
+            <form className="stock-inline-form" onSubmit={addStockCategory}>
+              <input
+                value={stockCategoryName}
+                onChange={(event) => setStockCategoryName(event.target.value)}
+                placeholder="Criar categoria. Ex: Comida, Bebida, Limpeza"
+              />
+              <button className="primary" type="submit">Criar categoria</button>
+            </form>
+
+            <div className="stock-chip-list">
+              {stockCategories.map((category) => (
+                <span className="stock-chip" key={category.id}>
+                  {category.name}
+                  <button type="button" onClick={() => deleteStockCategory(category.id)}>×</button>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </StockModal>
+    );
+  }
+
   function renderStockEntryModal() {
     const item = selectedStockModalItem(stockEntryForm);
     const compatibleUnits = compatibleUnitsFor(item?.unit || "g");
+    const entryCategoryOptions = stockCategories.map((category) => ({
+      category,
+      label: `${category.name} | ${stockItemsView.filter((currentItem) => currentItem.categoryId === category.id).length} produto(s)`
+    }));
+    const entryProductOptions = activeStockProducts()
+      .filter((currentItem) => !stockEntryForm.categoryId || currentItem.categoryId === stockEntryForm.categoryId)
+      .map((currentItem) => ({
+        item: currentItem,
+        label: `${currentItem.name} | ${currentItem.category} | ${currentItem.internalCode || currentItem.barcode || "sem código"}`
+      }));
+    const entrySupplierOptions = stockSuppliers.map((supplier) => ({ supplier, label: supplier }));
+
+    function selectEntryCategory(value) {
+      const selectedOption = entryCategoryOptions.find((option) => option.label === value || option.category.name === value);
+      const categoryId = selectedOption?.category.id || "";
+      setStockEntryCategorySearch(value);
+      setStockEntryProductSearch("");
+      setStockEntryForm({ ...stockEntryForm, categoryId, itemId: "", quantityUnit: "g", unitCost: "" });
+    }
+
+    function clearEntryCategory() {
+      setStockEntryCategorySearch("");
+      setStockEntryProductSearch("");
+      setStockEntryForm({ ...stockEntryForm, categoryId: "", itemId: "", quantityUnit: "g", unitCost: "" });
+    }
+
+    function selectEntryProduct(value) {
+      const selectedOption = entryProductOptions.find((option) => option.label === value);
+      const selected = selectedOption?.item || stockItemsView.find((currentItem) => currentItem.id === value);
+      const category = stockCategories.find((currentCategory) => currentCategory.id === selected?.categoryId);
+      setStockEntryProductSearch(value);
+      setStockEntryCategorySearch(category ? category.name : selected?.category || stockEntryCategorySearch);
+      setStockEntryForm({
+        ...stockEntryForm,
+        itemId: selected?.id || "",
+        categoryId: selected?.categoryId || stockEntryForm.categoryId,
+        quantityUnit: compatibleUnitsFor(selected?.unit || "g")[0],
+        unitCost: selected?.unitCost || ""
+      });
+    }
+
+    function clearEntryProduct() {
+      setStockEntryProductSearch("");
+      setStockEntryForm({ ...stockEntryForm, itemId: "", quantityUnit: "g", unitCost: "" });
+    }
+
     return (
       <StockModal title={editingStockLotId ? "Editar entrada" : "Nova entrada"} onClose={closeStockModal}>
         <form className="stock-form-grid stock-modal-form" onSubmit={saveStockEntryAdvanced}>
           <label>
+            Categoria
+            <div className="smart-filter-field">
+              <input
+                list="stock-entry-category-options"
+                value={stockEntryCategorySearch}
+                onChange={(event) => selectEntryCategory(event.target.value)}
+                placeholder="Busque por categoria..."
+              />
+              {stockEntryCategorySearch && (
+                <button type="button" aria-label="Limpar categoria" onClick={clearEntryCategory}>×</button>
+              )}
+            </div>
+            <datalist id="stock-entry-category-options">
+              {entryCategoryOptions.map((option) => (
+                <option key={option.category.id} value={option.label} />
+              ))}
+            </datalist>
+          </label>
+          <label>
             Produto
-            <select value={stockEntryForm.itemId} onChange={(event) => {
-              const selected = stockItemsView.find((currentItem) => currentItem.id === event.target.value);
-              setStockEntryForm({ ...stockEntryForm, itemId: event.target.value, quantityUnit: compatibleUnitsFor(selected?.unit || "g")[0], unitCost: selected?.unitCost || "" });
-            }}>
-              <option value="">Selecione</option>
-              {productOptions()}
-            </select>
+            <div className="smart-filter-field">
+              <input
+                list="stock-entry-product-options"
+                value={stockEntryProductSearch}
+                onChange={(event) => selectEntryProduct(event.target.value)}
+                placeholder="Busque por produto, código ou categoria..."
+              />
+              {stockEntryProductSearch && (
+                <button type="button" aria-label="Limpar produto" onClick={clearEntryProduct}>×</button>
+              )}
+            </div>
+            <datalist id="stock-entry-product-options">
+              {entryProductOptions.map((option) => (
+                <option key={option.item.id} value={option.label} />
+              ))}
+            </datalist>
+            {item && (
+              <small className="smart-filter-hint">
+                {item.category} • Unidade: {unitLabel(item.unit)}
+              </small>
+            )}
           </label>
           <label>
             Quantidade
@@ -2527,7 +2551,17 @@ export default function App() {
           </label>
           <label>
             Fornecedor
-            <input list="stock-suppliers" value={stockEntryForm.supplier} onChange={(event) => setStockEntryForm({ ...stockEntryForm, supplier: event.target.value })} placeholder="Fornecedor" />
+            <input
+              list="stock-entry-supplier-options"
+              value={stockEntryForm.supplier}
+              onChange={(event) => setStockEntryForm({ ...stockEntryForm, supplier: event.target.value })}
+              placeholder="Busque fornecedor cadastrado..."
+            />
+            <datalist id="stock-entry-supplier-options">
+              {entrySupplierOptions.map((option) => (
+                <option key={option.supplier} value={option.label} />
+              ))}
+            </datalist>
           </label>
           <label>
             Lote
@@ -3349,7 +3383,8 @@ export default function App() {
       { id: "produto", title: "Produto / Item", icon: "📦", description: "Cadastre produtos, itens, categorias e unidade padrão." },
       { id: "usuario", title: "Usuário", icon: "👤", description: "Cadastre funcionários, perfil, setor, cargo e Telegram." },
       { id: "processo", title: "Processo / Atividade", icon: "✅", description: "Cadastre rotinas operacionais para o checklist." },
-      { id: "area", title: "Área / Departamento", icon: "🏢", description: "Cadastre áreas como Cozinha, Salão, Estoque e Bar." }
+      { id: "area", title: "Área / Departamento", icon: "🏢", description: "Cadastre áreas como Cozinha, Salão, Estoque e Bar." },
+      { id: "fornecedor", title: "Fornecedor", icon: "🚚", description: "Cadastre fornecedores usados nas entradas de estoque." }
     ];
 
     return (
@@ -3363,6 +3398,7 @@ export default function App() {
               if (option.id === "usuario") return openStockUserModal();
               if (option.id === "processo") return openProcessActivityModal();
               if (option.id === "area") return openAreaDepartmentModal();
+              if (option.id === "fornecedor") return openStockSupplierModal();
               return setAccessCadastroType(option.id);
             }}
           >
@@ -3728,6 +3764,32 @@ export default function App() {
             <span className="stock-chip" key={area}>
               {area}
               <button type="button" onClick={() => deleteAreaDepartment(area)}>×</button>
+            </span>
+          ))}
+        </div>
+      </>
+    );
+  }
+
+  function renderAccessSupplierForm() {
+    return (
+      <>
+        <p className="stock-help">Cadastre fornecedores para reutilizar na entrada de estoque.</p>
+
+        <form className="stock-inline-form" onSubmit={addStockSupplier}>
+          <input
+            value={stockSupplierName}
+            onChange={(event) => setStockSupplierName(event.target.value)}
+            placeholder="Ex: Distribuidora Central, Atacado São José"
+          />
+          <button className="primary" type="submit">Cadastrar fornecedor</button>
+        </form>
+
+        <div className="area-list">
+          {stockSuppliers.map((supplier) => (
+            <span className="stock-chip" key={supplier}>
+              {supplier}
+              <button type="button" onClick={() => deleteStockSupplier(supplier)}>×</button>
             </span>
           ))}
         </div>
@@ -4262,6 +4324,7 @@ export default function App() {
             <MiniDashCard title="Usuários" value={visibleStockUsers.length} detail="Cadastrados" />
             <MiniDashCard title="Usuários ativos" value={activeUsers} detail="Com acesso liberado" />
             <MiniDashCard title="Áreas" value={areas.length} detail="Departamentos" />
+            <MiniDashCard title="Fornecedores" value={stockSuppliers.length} detail="Cadastrados" />
             <MiniDashCard title="Rotinas" value={processCadastros} detail="Processos e atividades" />
           </div>
 
@@ -4270,7 +4333,7 @@ export default function App() {
 
         {accessCadastroType === "produto" ? (
           renderStockCadastro()
-        ) : ["usuario", "processo", "area"].includes(accessCadastroType) ? null : (
+        ) : ["usuario", "processo", "area", "fornecedor"].includes(accessCadastroType) ? null : (
           <section className="module-content stock-wide">
           </section>
         )}
@@ -4293,6 +4356,14 @@ export default function App() {
           <StockModal title="Cadastrar área / departamento" onClose={closeAreaDepartmentModal}>
             <div className="access-user-editor access-user-editor-modal">
               {renderAccessAreaForm({ insideModal: true })}
+            </div>
+          </StockModal>
+        )}
+
+        {showStockSupplierModal && (
+          <StockModal title="Cadastrar fornecedor" onClose={closeStockSupplierModal}>
+            <div className="access-user-editor access-user-editor-modal">
+              {renderAccessSupplierForm()}
             </div>
           </StockModal>
         )}
