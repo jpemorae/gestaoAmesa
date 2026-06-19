@@ -3870,7 +3870,7 @@ export default function App() {
     const compatibleUnits = compatibleUnitsFor(selectedItem?.unit || "g");
     const isLabelsDash = labelPage === "dash";
     const labelProductOptions = stockItemsView
-      .filter((item) => item.type === "Produto" || item.type === "Item")
+      .filter((item) => (item.type === "Produto" || item.type === "Item") && Number(item.totalStock || 0) > 0)
       .map((item) => ({
         item,
         label: `${item.name} | ${item.category} | ${item.internalCode || item.barcode || "sem código"} | Estoque: ${formatStockDisplay(item.totalStock, item.stockUnit)}`
@@ -3882,6 +3882,11 @@ export default function App() {
       const firstUnit = compatibleUnitsFor(selected?.unit || "g")[0];
       setLabelProductSearch(value);
       setLabelForm({ ...labelForm, itemId: selected?.id || "", quantityUnit: firstUnit });
+    }
+
+    function clearLabelProductSelection() {
+      setLabelProductSearch("");
+      setLabelForm({ ...labelForm, itemId: "", quantityUnit: "g" });
     }
 
     return (
@@ -3955,12 +3960,17 @@ export default function App() {
                 <form className="stock-form-grid" onSubmit={saveLabels}>
               <label>
                 Produto / Item
-                <input
-                  list="label-product-options"
-                  value={labelProductSearch}
-                  onChange={(event) => selectLabelProduct(event.target.value)}
-                  placeholder="Busque por produto, código ou categoria..."
-                />
+                <div className="smart-filter-field">
+                  <input
+                    list="label-product-options"
+                    value={labelProductSearch}
+                    onChange={(event) => selectLabelProduct(event.target.value)}
+                    placeholder="Busque por produto, código ou categoria..."
+                  />
+                  {labelProductSearch && (
+                    <button type="button" aria-label="Limpar produto selecionado" onClick={clearLabelProductSelection}>×</button>
+                  )}
+                </div>
                 <datalist id="label-product-options">
                   {labelProductOptions.map((option) => (
                     <option key={option.item.id} value={option.label} />

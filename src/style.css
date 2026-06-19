@@ -2580,6 +2580,31 @@ td {
   font-weight: 800;
 }
 
+.smart-filter-field {
+  position: relative;
+}
+
+.smart-filter-field input {
+  width: 100%;
+  padding-right: 42px;
+}
+
+.smart-filter-field button {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 999px;
+  background: #f3ead8;
+  color: var(--blue);
+  font-weight: 900;
+  padding: 0;
+}
+
 .label-card {
   background: #fff;
   border: 2px solid var(--blue);
