@@ -836,6 +836,39 @@ export default function App() {
     });
   }, [stockItemsView, stockSearch, stockFilters, stockQuickFilter, stockAlertDays]);
 
+  const stockOperationalFilteredItems = useMemo(() => {
+    const query = stockSearch.trim().toLowerCase();
+    const now = new Date();
+
+    return stockItemsView.filter((item) => {
+      const matchesQuery = `${item.name} ${item.category} ${item.type} ${item.internalCode || ""} ${item.barcode || ""}`.toLowerCase().includes(query);
+      const matchesCategory = stockFilters.category === "Todos" || item.categoryId === stockFilters.category || item.category === stockFilters.category;
+      const matchesSupplier = stockFilters.supplier === "Todos" || item.supplier === stockFilters.supplier;
+      const matchesLocation = stockFilters.location === "Todos" || item.mainLocation === stockFilters.location;
+      const matchesStatus = stockFilters.status === "Todos" || item.status === stockFilters.status;
+      const daysSinceMovement = item.lastMovementAt ? Math.floor((now - new Date(item.lastMovementAt)) / (1000 * 60 * 60 * 24)) : 999;
+      const matchesQuick =
+        stockQuickFilter === "todos" ||
+        (stockQuickFilter === "baixo" && (item.status === "Atenção" || item.status === "Crítico")) ||
+        (stockQuickFilter === "vencendo" && item.nextExpiry && diffDays(item.nextExpiry) >= 0 && diffDays(item.nextExpiry) <= stockAlertDays) ||
+        (stockQuickFilter === "vencidos" && item.status === "Vencido") ||
+        (stockQuickFilter === "sem-movimento" && daysSinceMovement >= 30);
+
+      const isStockProduct = item.type === "Produto" || item.type === "Item";
+      return isStockProduct && item.hasStockEntry && matchesQuery && matchesCategory && matchesSupplier && matchesLocation && matchesStatus && matchesQuick;
+    });
+  }, [stockItemsView, stockSearch, stockFilters, stockQuickFilter, stockAlertDays]);
+
+  const filteredRegisteredItems = useMemo(() => {
+    const query = stockSearch.trim().toLowerCase();
+
+    return stockItemsView.filter((item) => {
+      const matchesQuery = `${item.name} ${item.category} ${item.type} ${item.internalCode || ""} ${item.barcode || ""} ${item.status || ""}`.toLowerCase().includes(query);
+      const isRegisteredItem = item.type === "Produto" || item.type === "Item" || item.type === "Processo" || item.type === "Atividade";
+      return isRegisteredItem && matchesQuery;
+    });
+  }, [stockItemsView, stockSearch]);
+
   const stockDashboard = useMemo(() => {
     const now = new Date();
     const currentMonth = now.getMonth();
@@ -1187,8 +1220,8 @@ export default function App() {
   async function inactivateStockItem(itemId) {
     const hasMovements = stockMovements.some((movement) => movement.itemId === itemId);
     const message = hasMovements
-      ? "Este produto possui movimentações. Ele será inativado e permanecerá no histórico."
-      : "Deseja inativar este produto?";
+      ? "Este produto possui movimentações/estoque. Apenas o cadastro será inativado; estoque e histórico serão mantidos."
+      : "Deseja inativar apenas o cadastro deste produto?";
     if (!confirm(message)) return;
     const item = stockItems.find((currentItem) => currentItem.id === itemId);
     const nextItems = stockItems.map((currentItem) => currentItem.id === itemId ? { ...currentItem, status: "Inativo" } : currentItem);
@@ -1204,6 +1237,37 @@ export default function App() {
       toLocation: "",
       reason: "Produto inativado",
       note: "Exclusão lógica do cadastro"
+    });
+  }
+
+  async function reactivateStockItem(itemId) {
+    const nextItems = stockItems.map((currentItem) => currentItem.id === itemId ? { ...currentItem, status: "Ativo" } : currentItem);
+    setStockItems(nextItems);
+    await persistStockCatalog(stockCategories, nextItems);
+  }
+
+  function removeItemFromStock(itemId) {
+    const item = stockItems.find((currentItem) => currentItem.id === itemId);
+    const itemLots = stockLots.filter((lot) => lot.itemId === itemId);
+
+    if (itemLots.length === 0) {
+      alert("Este produto não possui entradas em estoque para remover.");
+      return;
+    }
+
+    if (!confirm("Deseja remover este item apenas do estoque? O cadastro do produto será mantido.")) return;
+
+    setStockLots(stockLots.filter((lot) => lot.itemId !== itemId));
+    appendStockMovement({
+      itemId,
+      itemName: item?.name || "Produto",
+      type: "Ajuste",
+      quantity: 0,
+      unit: item?.unit || "",
+      fromLocation: "",
+      toLocation: "",
+      reason: "Removido do estoque",
+      note: "Cadastro do produto preservado"
     });
   }
 
@@ -2173,7 +2237,7 @@ export default function App() {
           />
         </div>
 
-        {filteredStockItems.length === 0 ? (
+        {filteredRegisteredItems.length === 0 ? (
           <div className="module-placeholder">
             <strong>Nenhum cadastro encontrado</strong>
             <p>Use o módulo Cadastros para criar produtos, itens, processos ou atividades.</p>
@@ -2189,11 +2253,12 @@ export default function App() {
                   <th>Unidade/Horário</th>
                   <th>Unidade/Frequência</th>
                   <th>Estoque atual/Repetição</th>
+                  <th>Status</th>
                   <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredStockItems.map((item) => (
+                {filteredRegisteredItems.map((item) => (
                   <tr key={item.id} className={item.totalStock <= 0 ? "stock-zero-row" : ""}>
                     <td><span className="stock-type-badge">{item.type || "Produto"}</span></td>
                     <td><strong>{item.name}</strong></td>
@@ -2209,13 +2274,18 @@ export default function App() {
                         ? item.repeats === "Sim" ? `${item.repeatQuantity || 0} vez(es)` : "Não repete"
                         : <strong>{formatStockDisplay(item.totalStock, item.stockUnit)}</strong>}
                     </td>
+                    <td>{item.productStatus || item.status || "Ativo"}</td>
                     <td>
                       {item.type === "Produto" || item.type === "Item" ? (
                         <details className="table-action-menu">
                           <summary>⚙️ Ações</summary>
                           <div className="table-action-menu-list">
                             <button type="button" onClick={() => editStockItem(item)}>Editar</button>
-                            <button type="button" className="danger-action" onClick={() => inactivateStockItem(item.id)}>Excluir</button>
+                            {(item.productStatus || item.status) === "Inativo" ? (
+                              <button type="button" onClick={() => reactivateStockItem(item.id)}>Reativar</button>
+                            ) : (
+                              <button type="button" className="danger-action" onClick={() => inactivateStockItem(item.id)}>Inativar cadastro</button>
+                            )}
                           </div>
                         </details>
                       ) : "--"}
@@ -2746,8 +2816,6 @@ export default function App() {
   }
 
   function renderStockEstoque() {
-    const stockedFilteredItems = filteredStockItems.filter((item) => item.hasStockEntry);
-
     return (
       <>
         <section className="module-content stock-wide">
@@ -2826,7 +2894,7 @@ export default function App() {
             {stockLocations.map((location) => <option key={location} value={location} />)}
           </datalist>
 
-          {stockedFilteredItems.length === 0 ? (
+          {stockOperationalFilteredItems.length === 0 ? (
             <div className="module-placeholder">
               <strong>Nenhum produto encontrado</strong>
               <p>Use Nova Entrada para registrar estoque de um produto cadastrado ou ajuste os filtros.</p>
@@ -2850,7 +2918,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {stockedFilteredItems.map((item) => (
+                  {stockOperationalFilteredItems.map((item) => (
                     <tr key={item.id} className={item.status === "Vencido" ? "stock-expired-row" : item.status === "Atenção" || item.status === "Crítico" ? "stock-warning-row" : item.totalStock <= 0 ? "stock-zero-row" : ""}>
                       <td>
                         <strong>{item.name}</strong>
@@ -2868,7 +2936,7 @@ export default function App() {
                       <td>
                         <div className="table-actions">
                           <button className="secondary" type="button" onClick={() => editStockItem(item)}>Editar</button>
-                          <button className="danger" type="button" onClick={() => inactivateStockItem(item.id)}>Inativar</button>
+                          <button className="danger" type="button" onClick={() => removeItemFromStock(item.id)}>Remover do estoque</button>
                         </div>
                       </td>
                     </tr>
