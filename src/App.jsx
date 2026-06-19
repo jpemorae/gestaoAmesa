@@ -800,6 +800,7 @@ export default function App() {
         productStatus: item.status || "Ativo",
         category,
         stockUnit,
+        hasStockEntry: stockLots.some((lot) => lot.itemId === item.id),
         totalStock,
         nextExpiry: nextExpiryLot?.expiryDate || "",
         mainLocation,
@@ -839,7 +840,7 @@ export default function App() {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-    const activeProducts = stockItemsView.filter((item) => item.productStatus !== "Inativo");
+    const activeProducts = stockItemsView.filter((item) => item.productStatus !== "Inativo" && item.hasStockEntry);
     const lossMonth = stockLosses
       .filter((loss) => {
         const date = new Date(loss.createdAtIso || loss.createdAt || 0);
@@ -935,17 +936,6 @@ export default function App() {
     const nextItems = [newItem, ...stockItems];
     setStockItems(nextItems);
     await persistStockCatalog(stockCategories, nextItems);
-    appendStockMovement({
-      itemId: newItem.id,
-      itemName: newItem.name,
-      type: "Ajuste",
-      quantity: 0,
-      unit: newItem.unit,
-      fromLocation: "",
-      toLocation: "",
-      reason: "Produto cadastrado",
-      note: "Cadastro mestre criado"
-    });
     resetStockItemForm({
       type: stockItemForm.type,
       categoryId: stockItemForm.categoryId
@@ -2756,6 +2746,8 @@ export default function App() {
   }
 
   function renderStockEstoque() {
+    const stockedFilteredItems = filteredStockItems.filter((item) => item.hasStockEntry);
+
     return (
       <>
         <section className="module-content stock-wide">
@@ -2834,10 +2826,10 @@ export default function App() {
             {stockLocations.map((location) => <option key={location} value={location} />)}
           </datalist>
 
-          {filteredStockItems.length === 0 ? (
+          {stockedFilteredItems.length === 0 ? (
             <div className="module-placeholder">
               <strong>Nenhum produto encontrado</strong>
-              <p>Use o módulo Cadastros para criar produtos ou ajuste os filtros.</p>
+              <p>Use Nova Entrada para registrar estoque de um produto cadastrado ou ajuste os filtros.</p>
             </div>
           ) : (
             <div className="stock-table-wrap">
@@ -2858,7 +2850,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredStockItems.map((item) => (
+                  {stockedFilteredItems.map((item) => (
                     <tr key={item.id} className={item.status === "Vencido" ? "stock-expired-row" : item.status === "Atenção" || item.status === "Crítico" ? "stock-warning-row" : item.totalStock <= 0 ? "stock-zero-row" : ""}>
                       <td>
                         <strong>{item.name}</strong>
@@ -4139,7 +4131,7 @@ export default function App() {
 
   function renderClientDashboard() {
     const labelsDash = getLabelsDash();
-    const stockProducts = stockItemsView.filter((item) => item.type === "Produto" || item.type === "Item");
+    const stockProducts = stockItemsView.filter((item) => (item.type === "Produto" || item.type === "Item") && item.hasStockEntry);
     const expiredLots = stockLots.filter((lot) => Number(lot.quantity || 0) > 0 && diffDays(lot.expiryDate) < 0).length;
     const completedToday = checklistHistory.filter((record) => record.date === today()).length;
 
