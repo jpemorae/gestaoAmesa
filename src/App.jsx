@@ -318,6 +318,10 @@ export default function App() {
     repeatQuantity: "1",
     frequency: "Diário"
   });
+
+  function updateProcessActivityForm(field, value) {
+    setProcessActivityForm((currentForm) => ({ ...currentForm, [field]: value }));
+  }
   const [stockEntryForm, setStockEntryForm] = useState({
     itemId: "",
     quantity: "",
@@ -387,6 +391,7 @@ export default function App() {
   const [qrDiscardReason, setQrDiscardReason] = useState("");
 
   const [stockCadastroType, setStockCadastroType] = useState("produto");
+  const [openRegisteredActionId, setOpenRegisteredActionId] = useState("");
   const [accessCadastroType, setAccessCadastroType] = useState("produto");
   const [areaForm, setAreaForm] = useState("");
   const [showProcessActivityModal, setShowProcessActivityModal] = useState(false);
@@ -1218,21 +1223,26 @@ export default function App() {
   }
 
   async function inactivateStockItem(itemId) {
+    const currentItem = stockItems.find((item) => item.id === itemId);
+    if ((currentItem?.status || "Ativo") === "Inativo") {
+      alert("Este cadastro já está inativo.");
+      return;
+    }
+
     const hasMovements = stockMovements.some((movement) => movement.itemId === itemId);
     const message = hasMovements
       ? "Este produto possui movimentações/estoque. Apenas o cadastro será inativado; estoque e histórico serão mantidos."
       : "Deseja inativar apenas o cadastro deste produto?";
     if (!confirm(message)) return;
-    const item = stockItems.find((currentItem) => currentItem.id === itemId);
     const nextItems = stockItems.map((currentItem) => currentItem.id === itemId ? { ...currentItem, status: "Inativo" } : currentItem);
     setStockItems(nextItems);
     await persistStockCatalog(stockCategories, nextItems);
     appendStockMovement({
       itemId,
-      itemName: item?.name || "Produto",
+      itemName: currentItem?.name || "Produto",
       type: "Ajuste",
       quantity: 0,
-      unit: item?.unit || "",
+      unit: currentItem?.unit || "",
       fromLocation: "",
       toLocation: "",
       reason: "Produto inativado",
@@ -1911,7 +1921,7 @@ export default function App() {
             Tipo
             <select
               value={processActivityForm.type}
-              onChange={(event) => setProcessActivityForm({ ...processActivityForm, type: event.target.value })}
+              onChange={(event) => updateProcessActivityForm("type", event.target.value)}
             >
               <option>Processo</option>
               <option>Atividade</option>
@@ -1922,7 +1932,7 @@ export default function App() {
             Processo / Atividade
             <input
               value={processActivityForm.name}
-              onChange={(event) => setProcessActivityForm({ ...processActivityForm, name: event.target.value })}
+              onChange={(event) => updateProcessActivityForm("name", event.target.value)}
               placeholder="Ex: Limpeza da cozinha, Conferência de freezer"
             />
           </label>
@@ -1931,7 +1941,7 @@ export default function App() {
             Área referente
             <input
               value={processActivityForm.area}
-              onChange={(event) => setProcessActivityForm({ ...processActivityForm, area: event.target.value })}
+              onChange={(event) => updateProcessActivityForm("area", event.target.value)}
               placeholder="Ex: Cozinha, Salão, Estoque, Bar"
             />
           </label>
@@ -1941,7 +1951,7 @@ export default function App() {
             <input
               type="time"
               value={processActivityForm.startTime}
-              onChange={(event) => setProcessActivityForm({ ...processActivityForm, startTime: event.target.value })}
+              onChange={(event) => updateProcessActivityForm("startTime", event.target.value)}
             />
           </label>
 
@@ -1950,7 +1960,7 @@ export default function App() {
             <input
               type="time"
               value={processActivityForm.endTime}
-              onChange={(event) => setProcessActivityForm({ ...processActivityForm, endTime: event.target.value })}
+              onChange={(event) => updateProcessActivityForm("endTime", event.target.value)}
             />
           </label>
 
@@ -1958,7 +1968,7 @@ export default function App() {
             Se repete?
             <select
               value={processActivityForm.repeats}
-              onChange={(event) => setProcessActivityForm({ ...processActivityForm, repeats: event.target.value })}
+              onChange={(event) => updateProcessActivityForm("repeats", event.target.value)}
             >
               <option>Não</option>
               <option>Sim</option>
@@ -1971,7 +1981,7 @@ export default function App() {
               type="number"
               min="0"
               value={processActivityForm.repeatQuantity}
-              onChange={(event) => setProcessActivityForm({ ...processActivityForm, repeatQuantity: event.target.value })}
+              onChange={(event) => updateProcessActivityForm("repeatQuantity", event.target.value)}
               placeholder="Ex: 3"
              
             />
@@ -1981,7 +1991,7 @@ export default function App() {
             Frequência
             <select
               value={processActivityForm.frequency}
-              onChange={(event) => setProcessActivityForm({ ...processActivityForm, frequency: event.target.value })}
+              onChange={(event) => updateProcessActivityForm("frequency", event.target.value)}
              
             >
               <option>Diário</option>
@@ -2277,17 +2287,24 @@ export default function App() {
                     <td>{item.productStatus || item.status || "Ativo"}</td>
                     <td>
                       {item.type === "Produto" || item.type === "Item" ? (
-                        <details className="table-action-menu">
-                          <summary>⚙️ Ações</summary>
-                          <div className="table-action-menu-list">
-                            <button type="button" onClick={() => editStockItem(item)}>Editar</button>
-                            {(item.productStatus || item.status) === "Inativo" ? (
-                              <button type="button" onClick={() => reactivateStockItem(item.id)}>Reativar</button>
-                            ) : (
-                              <button type="button" className="danger-action" onClick={() => inactivateStockItem(item.id)}>Inativar cadastro</button>
-                            )}
-                          </div>
-                        </details>
+                        <div className="table-action-menu">
+                          <button
+                            type="button"
+                            className="table-action-trigger"
+                            onClick={() => setOpenRegisteredActionId(openRegisteredActionId === item.id ? "" : item.id)}
+                          >
+                            ⚙️ Ações
+                          </button>
+                          {openRegisteredActionId === item.id && (
+                            <div className="table-action-menu-list">
+                              <button type="button" onClick={() => { setOpenRegisteredActionId(""); editStockItem(item); }}>Editar</button>
+                              {(item.productStatus || item.status) === "Inativo" && (
+                                <button type="button" onClick={() => { setOpenRegisteredActionId(""); reactivateStockItem(item.id); }}>Reativar</button>
+                              )}
+                              <button type="button" className="danger-action" onClick={() => { setOpenRegisteredActionId(""); inactivateStockItem(item.id); }}>Excluir cadastro</button>
+                            </div>
+                          )}
+                        </div>
                       ) : "--"}
                     </td>
                   </tr>
@@ -3598,7 +3615,7 @@ export default function App() {
         <form className="stock-form-grid" onSubmit={saveProcessActivity}>
           <label>
             Tipo
-            <select value={processActivityForm.type} onChange={(event) => setProcessActivityForm({ ...processActivityForm, type: event.target.value })}>
+            <select value={processActivityForm.type} onChange={(event) => updateProcessActivityForm("type", event.target.value)}>
               <option>Processo</option>
               <option>Atividade</option>
             </select>
@@ -3606,12 +3623,12 @@ export default function App() {
 
           <label>
             Processo / Atividade
-            <input value={processActivityForm.name} onChange={(event) => setProcessActivityForm({ ...processActivityForm, name: event.target.value })} placeholder="Ex: Limpeza da cozinha, Conferência de freezer" />
+            <input value={processActivityForm.name} onChange={(event) => updateProcessActivityForm("name", event.target.value)} placeholder="Ex: Limpeza da cozinha, Conferência de freezer" />
           </label>
 
           <label>
             Área referente
-            <select value={processActivityForm.area} onChange={(event) => setProcessActivityForm({ ...processActivityForm, area: event.target.value })}>
+            <select value={processActivityForm.area} onChange={(event) => updateProcessActivityForm("area", event.target.value)}>
               <option value="">Selecione</option>
               {areas.map((area) => <option key={area}>{area}</option>)}
             </select>
@@ -3619,17 +3636,17 @@ export default function App() {
 
           <label>
             Hora início
-            <input type="time" value={processActivityForm.startTime} onChange={(event) => setProcessActivityForm({ ...processActivityForm, startTime: event.target.value })} />
+            <input type="time" value={processActivityForm.startTime} onChange={(event) => updateProcessActivityForm("startTime", event.target.value)} />
           </label>
 
           <label>
             Hora fim
-            <input type="time" value={processActivityForm.endTime} onChange={(event) => setProcessActivityForm({ ...processActivityForm, endTime: event.target.value })} />
+            <input type="time" value={processActivityForm.endTime} onChange={(event) => updateProcessActivityForm("endTime", event.target.value)} />
           </label>
 
           <label>
             Se repete?
-            <select value={processActivityForm.repeats} onChange={(event) => setProcessActivityForm({ ...processActivityForm, repeats: event.target.value })}>
+            <select value={processActivityForm.repeats} onChange={(event) => updateProcessActivityForm("repeats", event.target.value)}>
               <option>Não</option>
               <option>Sim</option>
             </select>
@@ -3637,12 +3654,12 @@ export default function App() {
 
           <label>
             Quantas vezes repete?
-            <input type="number" min="0" value={processActivityForm.repeatQuantity} onChange={(event) => setProcessActivityForm({ ...processActivityForm, repeatQuantity: event.target.value })} placeholder="Ex: 3" disabled={processActivityForm.repeats === "Não"} />
+            <input type="number" min="0" value={processActivityForm.repeatQuantity} onChange={(event) => updateProcessActivityForm("repeatQuantity", event.target.value)} placeholder="Ex: 3" disabled={processActivityForm.repeats === "Não"} />
           </label>
 
           <label>
             Frequência
-            <select value={processActivityForm.frequency} onChange={(event) => setProcessActivityForm({ ...processActivityForm, frequency: event.target.value })} disabled={processActivityForm.repeats === "Não"}>
+            <select value={processActivityForm.frequency} onChange={(event) => updateProcessActivityForm("frequency", event.target.value)} disabled={processActivityForm.repeats === "Não"}>
               <option>Diário</option>
               <option>Semanal</option>
               <option>Mensal</option>

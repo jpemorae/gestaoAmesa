@@ -172,19 +172,15 @@ select:focus {
   display: inline-block;
 }
 
-.table-action-menu summary {
-  list-style: none;
+.table-action-trigger {
   cursor: pointer;
+  border: 0;
   border-radius: 9px;
   padding: 9px 12px;
   background: #f3ead8;
   color: var(--blue);
   font-weight: 900;
   user-select: none;
-}
-
-.table-action-menu summary::-webkit-details-marker {
-  display: none;
 }
 
 .table-action-menu-list {
