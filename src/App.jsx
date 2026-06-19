@@ -144,7 +144,7 @@ export default function App() {
   const [userForm, setUserForm] = useState(emptyUserForm);
 
   useEffect(() => {
-    if (!canUseAppDataApi()) return;
+    if (!canUseAppDataApi() || !isLogged || !loggedUser) return;
 
     let active = true;
     loadAppData()
@@ -198,7 +198,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [isLogged, loggedUser?.id]);
 
   const [stockPage, setStockPage] = useState("estoque");
   const legacyCompanyId = initialClients[0]?.id;
@@ -211,7 +211,9 @@ export default function App() {
   const [stockLots, setStockLots] = useTenantPersistentState("gestao_mesa_stock_lots", activeCompanyId, [], legacyCompanyId);
   const [stockMovements, setStockMovements] = useTenantPersistentState("gestao_mesa_stock_movements", activeCompanyId, [], legacyCompanyId);
   const [stockLosses, setStockLosses] = useTenantPersistentState("gestao_mesa_stock_losses", activeCompanyId, [], legacyCompanyId);
-  const [stockSuppliers, setStockSuppliers] = useTenantPersistentState("gestao_mesa_stock_suppliers", activeCompanyId, ["Fornecedor padrão"], legacyCompanyId);
+  const [stockSuppliers, setStockSuppliers] = useTenantPersistentState("gestao_mesa_stock_suppliers", activeCompanyId, [
+    { id: "supplier-default", corporateName: "Fornecedor padrão", fantasyName: "Fornecedor padrão", document: "", categoryId: "", status: "Ativo" }
+  ], legacyCompanyId);
   const [stockLocations, setStockLocations] = useTenantPersistentState("gestao_mesa_stock_locations", activeCompanyId, [
     "Estoque seco",
     "Câmara fria",
@@ -223,7 +225,9 @@ export default function App() {
   const [stockSearch, setStockSearch] = useState("");
   const [stockCategoryName, setStockCategoryName] = useState("");
   const [showStockCategoryModal, setShowStockCategoryModal] = useState(false);
-  const [stockSupplierName, setStockSupplierName] = useState("");
+  const emptySupplierForm = { corporateName: "", fantasyName: "", document: "", categoryId: "", status: "Ativo" };
+  const [stockSupplierForm, setStockSupplierForm] = useState(emptySupplierForm);
+  const [editingStockSupplierId, setEditingStockSupplierId] = useState(null);
   const [showStockSupplierModal, setShowStockSupplierModal] = useState(false);
   const [stockAlertDays, setStockAlertDays] = useState(2);
   const [stockFilters, setStockFilters] = useState({ category: "Todos", supplier: "Todos", location: "Todos", status: "Todos" });
@@ -257,7 +261,7 @@ export default function App() {
     }
   }
 
-  async function persistStockCatalog(nextCategories = stockCategories, nextItems = stockItems, options = {}) {
+  async function persistStockCatalog(nextCategories = stockCategories, nextItems = stockItems, nextSuppliers = stockSuppliers, options = {}) {
     if (!canUseAppDataApi() || !activeCompanyId) {
       setStockCatalogSyncState("local");
       return true;
@@ -267,7 +271,8 @@ export default function App() {
       setStockCatalogSyncState("syncing");
       await saveClientStockCatalog(activeCompanyId, {
         categories: nextCategories,
-        items: nextItems
+        items: nextItems,
+        suppliers: nextSuppliers
       });
       setStockCatalogSyncState("synced");
       return true;
@@ -296,17 +301,32 @@ export default function App() {
 
         const remoteCategories = Array.isArray(catalog?.categories) ? catalog.categories : [];
         const remoteItems = Array.isArray(catalog?.items) ? catalog.items : [];
-        const hasRemoteCatalog = remoteCategories.length > 0 || remoteItems.length > 0;
+        const remoteSuppliers = Array.isArray(catalog?.suppliers) ? catalog.suppliers : [];
+        const hasRemoteCatalog = remoteCategories.length > 0 || remoteItems.length > 0 || remoteSuppliers.length > 0;
 
         if (hasRemoteCatalog) {
+          const localSuppliers = readTenantStoredValue("gestao_mesa_stock_suppliers", activeCompanyId, stockSuppliers);
+          const nextSuppliers = remoteSuppliers.length > 0
+            ? remoteSuppliers
+            : (Array.isArray(localSuppliers) ? localSuppliers : stockSuppliers);
           setStockCategories(remoteCategories);
           setStockItems(remoteItems);
+          setStockSuppliers(nextSuppliers);
+          if (remoteSuppliers.length === 0 && nextSuppliers.length > 0) {
+            await saveClientStockCatalog(activeCompanyId, {
+              categories: remoteCategories,
+              items: remoteItems,
+              suppliers: nextSuppliers
+            });
+          }
         } else {
           const localCategories = readTenantStoredValue("gestao_mesa_stock_categories", activeCompanyId, stockCategories);
           const localItems = readTenantStoredValue("gestao_mesa_stock_products", activeCompanyId, stockItems);
+          const localSuppliers = readTenantStoredValue("gestao_mesa_stock_suppliers", activeCompanyId, stockSuppliers);
           await saveClientStockCatalog(activeCompanyId, {
             categories: Array.isArray(localCategories) ? localCategories : [],
-            items: Array.isArray(localItems) ? localItems : []
+            items: Array.isArray(localItems) ? localItems : [],
+            suppliers: Array.isArray(localSuppliers) ? localSuppliers : []
           });
         }
 
@@ -496,15 +516,17 @@ export default function App() {
       ...initialClients.filter((initialClient) => !clients.some((client) => client.id === initialClient.id))
     ];
 
-    let user = authenticateUser(login, fallbackUsers, fallbackClients);
+    let user = null;
 
-    if (!user && canUseAppDataApi()) {
+    if (canUseAppDataApi()) {
       try {
         const data = await loginAppUser(login);
         user = data?.user || null;
       } catch {
         user = null;
       }
+    } else {
+      user = authenticateUser(login, fallbackUsers, fallbackClients);
     }
 
     if (!user) {
@@ -711,19 +733,20 @@ export default function App() {
         companyId: null
       };
 
+      let savedUser = updatedUser;
       if (canUseAppDataApi()) {
         try {
-          await saveAppUser(updatedUser);
+          savedUser = await saveAppUser(updatedUser);
         } catch (error) {
           alert(`Não foi possível salvar no banco: ${error.message}`);
           return;
         }
       }
 
-      setUsers(users.map((user) => (user.id === editingUserId ? { ...user, ...updatedUser } : user)));
+      setUsers(users.map((user) => (user.id === editingUserId ? { ...user, ...savedUser } : user)));
 
       if (loggedUser?.id === editingUserId) {
-        setLoggedUser({ ...loggedUser, ...updatedUser });
+        setLoggedUser({ ...loggedUser, ...savedUser });
       }
 
       setEditingUserId(null);
@@ -739,16 +762,17 @@ export default function App() {
       createdAt: new Date().toLocaleDateString("pt-BR")
     };
 
+    let savedUser = newUser;
     if (canUseAppDataApi()) {
       try {
-        await saveAppUser(newUser);
+        savedUser = await saveAppUser(newUser);
       } catch (error) {
         alert(`Não foi possível salvar no banco: ${error.message}`);
         return;
       }
     }
 
-    setUsers([newUser, ...users]);
+    setUsers([savedUser, ...users]);
 
     setUserForm(emptyUserForm);
   }
@@ -758,7 +782,7 @@ export default function App() {
     setUserForm({
       name: user.name,
       email: user.email,
-      password: user.password,
+      password: user.password || "",
       profile: user.profile,
       status: user.status
     });
@@ -920,6 +944,41 @@ export default function App() {
     };
   }, [stockItemsView, stockLosses, stockAlertDays]);
 
+  function supplierRecord(supplier) {
+    if (typeof supplier === "string") {
+      const id = `legacy-${supplier.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}`;
+      return {
+        id,
+        corporateName: supplier,
+        fantasyName: supplier,
+        document: "",
+        categoryId: "",
+        status: "Ativo"
+      };
+    }
+
+    const fallbackName = supplier.corporateName || supplier.name || supplier.fantasyName || supplier.document || "fornecedor";
+    const id = supplier.id || `legacy-${String(fallbackName).toLowerCase().replace(/[^a-z0-9]+/gi, "-")}`;
+
+    return {
+      id,
+      corporateName: supplier.corporateName || supplier.name || supplier.fantasyName || "",
+      fantasyName: supplier.fantasyName || supplier.name || supplier.corporateName || "",
+      document: supplier.document || "",
+      categoryId: supplier.categoryId || "",
+      status: supplier.status || "Ativo"
+    };
+  }
+
+  function supplierDisplayName(supplier) {
+    const record = supplierRecord(supplier);
+    return record.fantasyName || record.corporateName;
+  }
+
+  function normalizedSuppliers() {
+    return stockSuppliers.map(supplierRecord);
+  }
+
   async function addStockCategory(event) {
     event.preventDefault();
     const name = stockCategoryName.trim();
@@ -944,25 +1003,71 @@ export default function App() {
     await persistStockCatalog(nextCategories, stockItems);
   }
 
-  function addStockSupplier(event) {
+  async function saveStockSupplier(event) {
     event.preventDefault();
-    const name = stockSupplierName.trim();
-    if (!name) return alert("Informe o nome do fornecedor.");
-    if (stockSuppliers.some((supplier) => supplier.toLowerCase() === name.toLowerCase())) {
+
+    const corporateName = stockSupplierForm.corporateName.trim();
+    const fantasyName = stockSupplierForm.fantasyName.trim();
+    const document = stockSupplierForm.document.trim();
+
+    if (!corporateName) return alert("Informe a razão social.");
+    if (!fantasyName) return alert("Informe o nome fantasia.");
+    if (!stockSupplierForm.categoryId) return alert("Selecione a categoria de produto.");
+
+    const suppliers = normalizedSuppliers();
+    if (suppliers.some((supplier) => supplier.id !== editingStockSupplierId && document && supplier.document === document)) {
+      return alert("Já existe fornecedor com este CNPJ.");
+    }
+    if (suppliers.some((supplier) => supplier.id !== editingStockSupplierId && supplier.fantasyName.toLowerCase() === fantasyName.toLowerCase())) {
       return alert("Fornecedor já cadastrado.");
     }
-    setStockSuppliers([...stockSuppliers, name]);
-    setStockSupplierName("");
+
+    const record = {
+      id: editingStockSupplierId || crypto.randomUUID(),
+      corporateName,
+      fantasyName,
+      document,
+      categoryId: stockSupplierForm.categoryId,
+      status: stockSupplierForm.status || "Ativo"
+    };
+
+    const nextSuppliers = editingStockSupplierId
+      ? suppliers.map((supplier) => supplier.id === editingStockSupplierId ? record : supplier)
+      : [record, ...suppliers];
+
+    setStockSuppliers(nextSuppliers);
+    await persistStockCatalog(stockCategories, stockItems, nextSuppliers);
+
+    setStockSupplierForm(emptySupplierForm);
+    setEditingStockSupplierId(null);
     setShowStockSupplierModal(false);
   }
 
-  function deleteStockSupplier(name) {
-    if (stockLots.some((lot) => lot.supplier === name)) {
+  function editStockSupplier(supplier) {
+    const record = supplierRecord(supplier);
+    setEditingStockSupplierId(record.id);
+    setStockSupplierForm({
+      corporateName: record.corporateName,
+      fantasyName: record.fantasyName,
+      document: record.document,
+      categoryId: record.categoryId,
+      status: record.status
+    });
+  }
+
+  async function deleteStockSupplier(supplierId) {
+    const suppliers = normalizedSuppliers();
+    const supplier = suppliers.find((item) => item.id === supplierId);
+    const names = supplier ? [supplier.fantasyName, supplier.corporateName].filter(Boolean) : [];
+
+    if (stockLots.some((lot) => names.includes(lot.supplier) || lot.supplierId === supplierId)) {
       alert("Não é possível excluir fornecedor vinculado a entrada de estoque.");
       return;
     }
     if (!confirm("Deseja excluir este fornecedor?")) return;
-    setStockSuppliers(stockSuppliers.filter((supplier) => supplier !== name));
+    const nextSuppliers = suppliers.filter((item) => item.id !== supplierId);
+    setStockSuppliers(nextSuppliers);
+    await persistStockCatalog(stockCategories, stockItems, nextSuppliers);
   }
 
   async function saveStockItem(event) {
@@ -1192,8 +1297,8 @@ export default function App() {
 
   function ensureSupplier(name) {
     const supplier = (name || "Fornecedor padrão").trim();
-    if (supplier && !stockSuppliers.some((item) => item.toLowerCase() === supplier.toLowerCase())) {
-      setStockSuppliers([...stockSuppliers, supplier]);
+    if (supplier && !normalizedSuppliers().some((item) => supplierDisplayName(item).toLowerCase() === supplier.toLowerCase())) {
+      setStockSuppliers([...normalizedSuppliers(), { id: crypto.randomUUID(), corporateName: supplier, fantasyName: supplier, document: "", categoryId: "", status: "Ativo" }]);
     }
     return supplier;
   }
@@ -1364,17 +1469,24 @@ export default function App() {
     if (!item || converted.unit !== item.stockUnit) return alert("Unidade incompatível com o produto.");
     if (item.controlsExpiry !== "Não" && !stockEntryForm.expiryDate) return alert("Informe a validade.");
     if (!stockEntryForm.supplier.trim()) return alert("Selecione um fornecedor cadastrado.");
-    if (!stockSuppliers.some((supplier) => supplier.toLowerCase() === stockEntryForm.supplier.trim().toLowerCase())) {
+    const activeSuppliers = normalizedSuppliers().filter((supplier) => supplier.status === "Ativo");
+    const supplierInput = stockEntryForm.supplier.trim().toLowerCase();
+    const selectedSupplier = activeSuppliers.find((supplier) => {
+      const label = `${supplierDisplayName(supplier)} | ${stockCategories.find((category) => category.id === supplier.categoryId)?.name || "Todas categorias"} | ${supplier.document || "sem CNPJ"}`;
+      return supplierDisplayName(supplier).toLowerCase() === supplierInput || label.toLowerCase() === supplierInput;
+    });
+    if (!selectedSupplier) {
       return alert("Fornecedor não cadastrado. Cadastre o fornecedor antes de registrar a entrada.");
     }
 
-    const supplier = stockSuppliers.find((item) => item.toLowerCase() === stockEntryForm.supplier.trim().toLowerCase()) || stockEntryForm.supplier.trim();
+    const supplier = supplierDisplayName(selectedSupplier);
     const location = ensureLocation(stockEntryForm.location);
     const unitCost = Number(stockEntryForm.unitCost || item.unitCost || 0);
     const newLot = {
       id: editingStockLotId || crypto.randomUUID(),
       itemId: item.id,
       categoryId: item.categoryId || stockEntryForm.categoryId || "",
+      supplierId: selectedSupplier.id,
       quantity: converted.quantity,
       initialQuantity: converted.quantity,
       unit: converted.unit,
@@ -1406,8 +1518,7 @@ export default function App() {
       batchCode: newLot.batchCode
     });
 
-    setEditingStockLotId(null);
-    setStockEntryForm({ itemId: "", quantity: "", quantityUnit: "g", supplier: "", batchCode: "", expiryDate: "", unitCost: "", location: "Estoque seco", note: "", invoiceFileName: "" });
+    resetStockEntryForm();
     closeStockModal();
   }
 
@@ -1691,13 +1802,16 @@ export default function App() {
   }
 
   function openStockSupplierModal() {
-    setStockSupplierName("");
+    setStockSupplierForm(emptySupplierForm);
+    setEditingStockSupplierId(null);
     setAccessCadastroType("fornecedor");
     setShowStockSupplierModal(true);
   }
 
   function closeStockSupplierModal() {
     setShowStockSupplierModal(false);
+    setStockSupplierForm(emptySupplierForm);
+    setEditingStockSupplierId(null);
   }
 
   async function saveStockUser(event) {
@@ -1739,33 +1853,39 @@ export default function App() {
       createdAt: existingStockUser?.createdAt || new Date().toLocaleDateString("pt-BR")
     };
 
-    setStockUsers(editingStockUserId
-      ? stockUsers.map((user) => user.id === editingStockUserId ? employeeRecord : user)
-      : [employeeRecord, ...stockUsers]
-    );
-
     const globalUserRecord = {
       ...userRecord,
       createdAt: users.find((user) => user.id === editingStockUserId)?.createdAt || new Date().toLocaleDateString("pt-BR")
     };
 
+    let savedGlobalUser = globalUserRecord;
     if (canUseAppDataApi()) {
       try {
-        await saveAppUser(globalUserRecord);
+        savedGlobalUser = await saveAppUser(globalUserRecord);
       } catch (error) {
         alert(`Não foi possível salvar o usuário no banco: ${error.message}`);
         return;
       }
     }
 
+    const savedEmployeeRecord = {
+      ...employeeRecord,
+      ...savedGlobalUser,
+      password: canUseAppDataApi() ? "" : employeeRecord.password
+    };
+    setStockUsers(editingStockUserId
+      ? stockUsers.map((user) => user.id === editingStockUserId ? savedEmployeeRecord : user)
+      : [savedEmployeeRecord, ...stockUsers]
+    );
+
     const userAlreadyExists = users.some((user) => user.id === editingStockUserId);
     setUsers(editingStockUserId && userAlreadyExists
-      ? users.map((user) => user.id === editingStockUserId ? { ...user, ...globalUserRecord } : user)
-      : [globalUserRecord, ...users]
+      ? users.map((user) => user.id === editingStockUserId ? { ...user, ...savedGlobalUser } : user)
+      : [savedGlobalUser, ...users]
     );
 
     if (loggedUser?.id === editingStockUserId) {
-      setLoggedUser({ ...loggedUser, ...globalUserRecord });
+      setLoggedUser({ ...loggedUser, ...savedGlobalUser });
     }
 
     resetStockUserForm();
@@ -2457,20 +2577,26 @@ export default function App() {
         item: currentItem,
         label: `${currentItem.name} | ${currentItem.category} | ${currentItem.internalCode || currentItem.barcode || "sem código"}`
       }));
-    const entrySupplierOptions = stockSuppliers.map((supplier) => ({ supplier, label: supplier }));
+    const entrySupplierOptions = normalizedSuppliers()
+      .filter((supplier) => supplier.status === "Ativo")
+      .filter((supplier) => !stockEntryForm.categoryId || !supplier.categoryId || supplier.categoryId === stockEntryForm.categoryId)
+      .map((supplier) => ({
+        supplier,
+        label: `${supplierDisplayName(supplier)} | ${stockCategories.find((category) => category.id === supplier.categoryId)?.name || "Todas categorias"} | ${supplier.document || "sem CNPJ"}`
+      }));
 
     function selectEntryCategory(value) {
       const selectedOption = entryCategoryOptions.find((option) => option.label === value || option.category.name === value);
       const categoryId = selectedOption?.category.id || "";
       setStockEntryCategorySearch(value);
       setStockEntryProductSearch("");
-      setStockEntryForm({ ...stockEntryForm, categoryId, itemId: "", quantityUnit: "g", unitCost: "" });
+      setStockEntryForm({ ...stockEntryForm, categoryId, itemId: "", quantityUnit: "g", unitCost: "", supplier: "" });
     }
 
     function clearEntryCategory() {
       setStockEntryCategorySearch("");
       setStockEntryProductSearch("");
-      setStockEntryForm({ ...stockEntryForm, categoryId: "", itemId: "", quantityUnit: "g", unitCost: "" });
+      setStockEntryForm({ ...stockEntryForm, categoryId: "", itemId: "", quantityUnit: "g", unitCost: "", supplier: "" });
     }
 
     function selectEntryProduct(value) {
@@ -2484,7 +2610,8 @@ export default function App() {
         itemId: selected?.id || "",
         categoryId: selected?.categoryId || stockEntryForm.categoryId,
         quantityUnit: compatibleUnitsFor(selected?.unit || "g")[0],
-        unitCost: selected?.unitCost || ""
+        unitCost: selected?.unitCost || "",
+        supplier: ""
       });
     }
 
@@ -2559,7 +2686,7 @@ export default function App() {
             />
             <datalist id="stock-entry-supplier-options">
               {entrySupplierOptions.map((option) => (
-                <option key={option.supplier} value={option.label} />
+                <option key={option.supplier.id} value={option.label} />
               ))}
             </datalist>
           </label>
@@ -2907,7 +3034,7 @@ export default function App() {
             </select>
             <select value={stockFilters.supplier} onChange={(event) => setStockFilters({ ...stockFilters, supplier: event.target.value })}>
               <option>Todos</option>
-              {stockSuppliers.map((supplier) => <option key={supplier}>{supplier}</option>)}
+              {normalizedSuppliers().map((supplier) => <option key={supplier.id}>{supplierDisplayName(supplier)}</option>)}
             </select>
             <select value={stockFilters.location} onChange={(event) => setStockFilters({ ...stockFilters, location: event.target.value })}>
               <option>Todos</option>
@@ -2940,7 +3067,7 @@ export default function App() {
 
         <section className="module-content stock-wide">
           <datalist id="stock-suppliers">
-            {stockSuppliers.map((supplier) => <option key={supplier} value={supplier} />)}
+            {normalizedSuppliers().map((supplier) => <option key={supplier.id} value={supplierDisplayName(supplier)} />)}
           </datalist>
           <datalist id="stock-locations">
             {stockLocations.map((location) => <option key={location} value={location} />)}
@@ -3772,27 +3899,121 @@ export default function App() {
   }
 
   function renderAccessSupplierForm() {
+    const suppliers = normalizedSuppliers();
+
     return (
       <>
-        <p className="stock-help">Cadastre fornecedores para reutilizar na entrada de estoque.</p>
+        <p className="stock-help">Cadastre fornecedores por categoria para usar nas entradas de estoque e nas futuras listas de compra.</p>
 
-        <form className="stock-inline-form" onSubmit={addStockSupplier}>
-          <input
-            value={stockSupplierName}
-            onChange={(event) => setStockSupplierName(event.target.value)}
-            placeholder="Ex: Distribuidora Central, Atacado São José"
-          />
-          <button className="primary" type="submit">Cadastrar fornecedor</button>
+        <form className="stock-form-grid" onSubmit={saveStockSupplier}>
+          <label>
+            Razão social
+            <input
+              value={stockSupplierForm.corporateName}
+              onChange={(event) => setStockSupplierForm({ ...stockSupplierForm, corporateName: event.target.value })}
+              placeholder="Ex: Distribuidora Central Ltda"
+            />
+          </label>
+
+          <label>
+            Nome fantasia
+            <input
+              value={stockSupplierForm.fantasyName}
+              onChange={(event) => setStockSupplierForm({ ...stockSupplierForm, fantasyName: event.target.value })}
+              placeholder="Ex: Distribuidora Central"
+            />
+          </label>
+
+          <label>
+            CNPJ
+            <input
+              value={stockSupplierForm.document}
+              onChange={(event) => setStockSupplierForm({ ...stockSupplierForm, document: event.target.value })}
+              placeholder="Ex: 00.000.000/0001-00"
+            />
+          </label>
+
+          <label>
+            Categoria de produto
+            <select
+              value={stockSupplierForm.categoryId}
+              onChange={(event) => setStockSupplierForm({ ...stockSupplierForm, categoryId: event.target.value })}
+            >
+              <option value="">Selecione</option>
+              {stockCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </label>
+
+          <label>
+            Status
+            <select
+              value={stockSupplierForm.status}
+              onChange={(event) => setStockSupplierForm({ ...stockSupplierForm, status: event.target.value })}
+            >
+              <option>Ativo</option>
+              <option>Inativo</option>
+            </select>
+          </label>
+
+          <button className="primary" type="submit">
+            {editingStockSupplierId ? "Salvar fornecedor" : "Cadastrar fornecedor"}
+          </button>
+
+          {editingStockSupplierId && (
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => {
+                setEditingStockSupplierId(null);
+                setStockSupplierForm(emptySupplierForm);
+              }}
+            >
+              Cancelar edição
+            </button>
+          )}
         </form>
 
-        <div className="area-list">
-          {stockSuppliers.map((supplier) => (
-            <span className="stock-chip" key={supplier}>
-              {supplier}
-              <button type="button" onClick={() => deleteStockSupplier(supplier)}>×</button>
-            </span>
-          ))}
-        </div>
+        {suppliers.length === 0 ? (
+          <div className="module-placeholder">
+            <strong>Nenhum fornecedor cadastrado</strong>
+            <p>Cadastre fornecedores para relacionar às próximas entradas de estoque.</p>
+          </div>
+        ) : (
+          <div className="stock-table-wrap supplier-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome fantasia</th>
+                  <th>Razão social</th>
+                  <th>CNPJ</th>
+                  <th>Categoria</th>
+                  <th>Status</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {suppliers.map((supplier) => {
+                  const category = stockCategories.find((item) => item.id === supplier.categoryId);
+                  return (
+                    <tr key={supplier.id}>
+                      <td>{supplier.fantasyName}</td>
+                      <td>{supplier.corporateName}</td>
+                      <td>{supplier.document || "-"}</td>
+                      <td>{category?.name || "Sem categoria"}</td>
+                      <td><span className="status-pill">{supplier.status}</span></td>
+                      <td>
+                        <div className="action-buttons">
+                          <button type="button" onClick={() => editStockSupplier(supplier)}>Editar</button>
+                          <button type="button" onClick={() => deleteStockSupplier(supplier.id)}>Excluir</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </>
     );
   }
@@ -4324,7 +4545,7 @@ export default function App() {
             <MiniDashCard title="Usuários" value={visibleStockUsers.length} detail="Cadastrados" />
             <MiniDashCard title="Usuários ativos" value={activeUsers} detail="Com acesso liberado" />
             <MiniDashCard title="Áreas" value={areas.length} detail="Departamentos" />
-            <MiniDashCard title="Fornecedores" value={stockSuppliers.length} detail="Cadastrados" />
+            <MiniDashCard title="Fornecedores" value={normalizedSuppliers().length} detail="Cadastrados" />
             <MiniDashCard title="Rotinas" value={processCadastros} detail="Processos e atividades" />
           </div>
 

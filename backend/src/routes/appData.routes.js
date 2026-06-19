@@ -12,12 +12,15 @@ import {
   upsertAppClient,
   upsertAppUser
 } from "../controllers/appData.controller.js";
+import { requireAppDataSession } from "../middleware/appDataAuth.js";
+import { authRateLimiter } from "../middleware/rateLimit.js";
 
 const router = Router();
 
+router.post("/login", authRateLimiter, appLogin);
+router.use(requireAppDataSession);
 router.get("/", listAppData);
 router.get("/diagnostics", appDataDiagnostics);
-router.post("/login", appLogin);
 router.post("/clients", upsertAppClient);
 router.put("/clients/:id", updateAppClient);
 router.delete("/clients/:id", deleteAppClient);

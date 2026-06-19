@@ -1,6 +1,4 @@
 import express from "express";
-import cors from "cors";
-import helmet from "helmet";
 import morgan from "morgan";
 import dotenv from "dotenv";
 import authRoutes from "./routes/auth.routes.js";
@@ -11,28 +9,17 @@ import stockRoutes from "./routes/stock.routes.js";
 import labelRoutes from "./routes/label.routes.js";
 import checklistRoutes from "./routes/checklist.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
-import { isAllowedOrigin } from "./config/security.js";
 import { errorHandler, notFound } from "./middleware/error.js";
+import { installInputSanitizers, installSecurityMiddleware } from "./middleware/security.js";
+import { securityConfig } from "./config/security.js";
 
 dotenv.config();
 
 const app = express();
 
-const corsOptions = {
-  origin(origin, callback) {
-    if (isAllowedOrigin(origin)) return callback(null, true);
-    return callback(new Error("Origem nao permitida pelo CORS."));
-  },
-  credentials: true,
-  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Company-Id"],
-  maxAge: 86400
-};
-
-app.use(helmet());
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
-app.use(express.json({ limit: "10mb" }));
+installSecurityMiddleware(app);
+app.use(express.json({ limit: securityConfig.jsonBodyLimit }));
+installInputSanitizers(app);
 app.use(morgan("dev"));
 
 app.get("/health", (req, res) => {

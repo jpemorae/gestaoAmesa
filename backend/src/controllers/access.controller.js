@@ -25,7 +25,13 @@ export async function listUsers(req, res) {
 
 export async function createUser(req, res) {
   const { email, password, name, profile, department_id, role, phone } = req.body;
-  const company_id = req.profile.profile === "Super Admin" ? req.body.company_id : req.companyId;
+  const isSuperAdmin = req.profile.profile === "Super Admin";
+  const company_id = isSuperAdmin ? req.body.company_id : req.companyId;
+
+  if (!isSuperAdmin && (profile === "Super Admin" || profile === "Admin Master")) {
+    return res.status(403).json({ error: "Nao e permitido cadastrar administrador master." });
+  }
+  if (!company_id) return res.status(400).json({ error: "Empresa obrigatoria para cadastro de usuario." });
 
   const { data: auth, error: authError } = await supabaseAdmin.auth.admin.createUser({ email, password, email_confirm: true });
   if (authError) return res.status(400).json({ error: authError.message });
@@ -34,6 +40,9 @@ export async function createUser(req, res) {
     auth_user_id: auth.user.id, company_id, email, name, profile, department_id, role, phone
   }).select().single();
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) {
+    await supabaseAdmin.auth.admin.deleteUser(auth.user.id);
+    return res.status(400).json({ error: error.message });
+  }
   return res.status(201).json(data);
 }

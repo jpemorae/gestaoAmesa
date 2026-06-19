@@ -1,9 +1,13 @@
 import { supabaseAdmin } from "../config/supabase.js";
+import { assertValidUploadSignature, safeStoragePath } from "../utils/uploadSecurity.js";
 
 export async function uploadEvidence(req, res) {
-  if (!req.file) return res.status(400).json({ error: "Arquivo não enviado." });
-  const path = `${req.companyId}/${Date.now()}-${req.file.originalname}`;
+  if (!req.file) return res.status(400).json({ error: "Arquivo nao enviado." });
 
+  const validSignature = await assertValidUploadSignature(req, req.file, "upload_evidence_blocked");
+  if (!validSignature) return res.status(400).json({ error: "Arquivo de imagem invalido." });
+
+  const path = safeStoragePath(req.companyId, req.file.originalname);
   const { error } = await supabaseAdmin.storage.from("evidencias").upload(path, req.file.buffer, {
     contentType: req.file.mimetype,
     upsert: false
@@ -15,9 +19,12 @@ export async function uploadEvidence(req, res) {
 }
 
 export async function uploadLogo(req, res) {
-  if (!req.file) return res.status(400).json({ error: "Arquivo não enviado." });
-  const path = `${req.companyId || "platform"}/${Date.now()}-${req.file.originalname}`;
+  if (!req.file) return res.status(400).json({ error: "Arquivo nao enviado." });
 
+  const validSignature = await assertValidUploadSignature(req, req.file, "upload_logo_blocked");
+  if (!validSignature) return res.status(400).json({ error: "Arquivo de imagem invalido." });
+
+  const path = safeStoragePath(req.companyId || "platform", req.file.originalname);
   const { error } = await supabaseAdmin.storage.from("logos").upload(path, req.file.buffer, {
     contentType: req.file.mimetype,
     upsert: true

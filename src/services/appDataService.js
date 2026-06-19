@@ -1,4 +1,4 @@
-import { apiFetch, isApiConfigured } from "./api";
+import { apiFetch, isApiConfigured, persistApiSessionToken } from "./api";
 
 export function canUseAppDataApi() {
   return isApiConfigured();
@@ -11,10 +11,12 @@ export async function loadAppData() {
 
 export async function loginAppUser(credentials) {
   if (!canUseAppDataApi()) return null;
-  return apiFetch("/app-data/login", {
+  const data = await apiFetch("/app-data/login", {
     method: "POST",
     body: JSON.stringify(credentials)
   });
+  persistApiSessionToken(data?.token);
+  return data;
 }
 
 export async function saveAppClient(payload) {

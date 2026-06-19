@@ -1,5 +1,67 @@
 import crypto from "crypto";
 import { supabaseAdmin } from "../config/supabase.js";
+import { createAppDataToken } from "../middleware/appDataAuth.js";
+
+const PLATFORM_PROFILES = new Set(["Administrador", "Super Admin", "Admin Master"]);
+const CLIENT_MANAGER_PROFILES = new Set(["Administrador", "Gestor"]);
+
+function isPlatformUser(req) {
+  return req.appDataUser?.userType === "platform";
+}
+
+function isPlatformAdmin(req) {
+  return isPlatformUser(req) && PLATFORM_PROFILES.has(req.appDataUser?.profile);
+}
+
+function isClientManager(req) {
+  return req.appDataUser?.userType === "client" && CLIENT_MANAGER_PROFILES.has(req.appDataUser?.profile);
+}
+
+function canAccessCompany(req, companyId) {
+  if (isPlatformAdmin(req)) return true;
+  return req.appDataUser?.userType === "client" && req.appDataUser?.companyId && req.appDataUser.companyId === companyId;
+}
+
+function requirePlatformAdmin(req, res) {
+  if (isPlatformAdmin(req)) return true;
+  res.status(403).json({ error: "Acesso restrito ao administrador da plataforma." });
+  return false;
+}
+
+function requireCompanyAccess(req, res, companyId) {
+  if (canAccessCompany(req, companyId)) return true;
+  res.status(403).json({ error: "Acesso restrito a sua empresa." });
+  return false;
+}
+
+function normalizedManagedUserBody(req, res) {
+  const body = { ...req.body };
+
+  if (isPlatformAdmin(req)) return body;
+
+  if (!isClientManager(req)) {
+    res.status(403).json({ error: "Acesso negado." });
+    return null;
+  }
+
+  const companyId = req.appDataUser.companyId;
+  if ((body.companyId || body.company_id) && (body.companyId || body.company_id) !== companyId) {
+    res.status(403).json({ error: "Usuario deve pertencer a sua empresa." });
+    return null;
+  }
+  if (body.userType === "platform" || body.user_type === "platform") {
+    res.status(403).json({ error: "Nao e permitido cadastrar administrador master." });
+    return null;
+  }
+
+  return {
+    ...body,
+    userType: "client",
+    user_type: "client",
+    companyId,
+    company_id: companyId
+  };
+}
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
   const hash = crypto.scryptSync(String(password || ""), salt, 64).toString("hex");
@@ -24,8 +86,9 @@ function clientFromRow(row) {
 }
 
 function userFromRow(row) {
+  const { password, ...safePayload } = row.payload || {};
   return {
-    ...(row.payload || {}),
+    ...safePayload,
     id: row.id,
     name: row.name,
     email: row.email,
@@ -58,7 +121,8 @@ function userPayload(body, existing = null) {
   const id = body.id || existing?.id || crypto.randomUUID();
   const status = body.status || "Ativo";
   const userType = body.userType || body.user_type || "platform";
-  const payload = { ...body, id, status, userType, companyId: body.companyId || body.company_id || null };
+  const { password, ...safeBody } = body;
+  const payload = { ...safeBody, id, status, userType, companyId: body.companyId || body.company_id || null };
   const row = {
     id,
     name: body.name,
@@ -104,10 +168,10 @@ function appDataSetupResponse(message, error = null, extra = {}) {
 }
 
 export async function listAppData(req, res) {
-  const { data: clients, error: clientsError } = await supabaseAdmin
-    .from("app_clients")
-    .select("*")
-    .order("created_at", { ascending: false });
+  let clientsQuery = supabaseAdmin.from("app_clients").select("*").order("created_at", { ascending: false });
+  if (!isPlatformAdmin(req)) clientsQuery = clientsQuery.eq("id", req.appDataUser.companyId);
+
+  const { data: clients, error: clientsError } = await clientsQuery;
   if (clientsError) {
     return res.json(appDataSetupResponse(
       isMissingAppDataTable(clientsError)
@@ -117,10 +181,10 @@ export async function listAppData(req, res) {
     ));
   }
 
-  const { data: users, error: usersError } = await supabaseAdmin
-    .from("app_users")
-    .select("*")
-    .order("created_at", { ascending: false });
+  let usersQuery = supabaseAdmin.from("app_users").select("*").order("created_at", { ascending: false });
+  if (!isPlatformAdmin(req)) usersQuery = usersQuery.eq("company_id", req.appDataUser.companyId).eq("user_type", "client");
+
+  const { data: users, error: usersError } = await usersQuery;
   if (usersError) {
     return res.json(appDataSetupResponse(
       isMissingAppDataTable(usersError)
@@ -175,10 +239,13 @@ export async function appLogin(req, res) {
     if (!client) return res.status(401).json({ error: "Cliente inativo ou não encontrado." });
   }
 
-  return res.json({ user: userFromRow(user) });
+  const responseUser = userFromRow(user);
+  return res.json({ user: responseUser, token: createAppDataToken(responseUser) });
 }
 
 export async function appDataDiagnostics(req, res) {
+  if (!requirePlatformAdmin(req, res)) return;
+
   const checks = {};
 
   const { data: clients, error: clientsError } = await supabaseAdmin
@@ -204,6 +271,8 @@ export async function appDataDiagnostics(req, res) {
 }
 
 export async function upsertAppClient(req, res) {
+  if (!requirePlatformAdmin(req, res)) return;
+
   const payload = clientPayload(req.body);
   const { data, error } = await supabaseAdmin
     .from("app_clients")
@@ -216,6 +285,8 @@ export async function upsertAppClient(req, res) {
 }
 
 export async function updateAppClient(req, res) {
+  if (!requirePlatformAdmin(req, res)) return;
+
   const payload = clientPayload({ ...req.body, id: req.params.id });
   const { data, error } = await supabaseAdmin
     .from("app_clients")
@@ -228,13 +299,19 @@ export async function updateAppClient(req, res) {
 }
 
 export async function upsertAppUser(req, res) {
+  const body = normalizedManagedUserBody(req, res);
+  if (!body) return;
+
   const { data: existing } = await supabaseAdmin
     .from("app_users")
     .select("*")
-    .eq("email", String(req.body.email || "").trim().toLowerCase())
+    .eq("email", String(body.email || "").trim().toLowerCase())
     .maybeSingle();
+  if (existing && !isPlatformAdmin(req) && existing.company_id !== req.appDataUser.companyId) {
+    return res.status(403).json({ error: "Usuario pertence a outra empresa." });
+  }
 
-  const payload = userPayload(req.body, existing);
+  const payload = userPayload(body, existing);
   if (!payload.password_hash && existing) {
     payload.password_hash = existing.password_hash;
     payload.password_salt = existing.password_salt;
@@ -255,14 +332,20 @@ export async function upsertAppUser(req, res) {
 }
 
 export async function updateAppUser(req, res) {
+  const body = normalizedManagedUserBody(req, res);
+  if (!body) return;
+
   const { data: existing, error: existingError } = await supabaseAdmin
     .from("app_users")
     .select("*")
     .eq("id", req.params.id)
     .maybeSingle();
   if (existingError) return res.status(400).json({ error: existingError.message });
+  if (existing && !isPlatformAdmin(req) && existing.company_id !== req.appDataUser.companyId) {
+    return res.status(403).json({ error: "Usuario pertence a outra empresa." });
+  }
 
-  const payload = userPayload({ ...req.body, id: req.params.id }, existing);
+  const payload = userPayload({ ...body, id: req.params.id }, existing);
   if (!payload.password_hash) {
     if (!existing) return res.status(400).json({ error: "Senha obrigatória para novo usuário." });
     payload.password_hash = existing.password_hash;
@@ -280,18 +363,32 @@ export async function updateAppUser(req, res) {
 }
 
 export async function deleteAppUser(req, res) {
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("app_users")
+    .select("company_id,user_type")
+    .eq("id", req.params.id)
+    .maybeSingle();
+  if (existingError) return res.status(400).json({ error: existingError.message });
+  if (existing && !isPlatformAdmin(req) && (existing.company_id !== req.appDataUser.companyId || existing.user_type !== "client")) {
+    return res.status(403).json({ error: "Acesso restrito a sua empresa." });
+  }
+
   const { error } = await supabaseAdmin.from("app_users").delete().eq("id", req.params.id);
   if (error) return res.status(400).json({ error: error.message });
   return res.status(204).send();
 }
 
 export async function deleteAppClient(req, res) {
+  if (!requirePlatformAdmin(req, res)) return;
+
   const { error } = await supabaseAdmin.from("app_clients").delete().eq("id", req.params.id);
   if (error) return res.status(400).json({ error: error.message });
   return res.status(204).send();
 }
 
 export async function getClientStockCatalog(req, res) {
+  if (!requireCompanyAccess(req, res, req.params.id)) return;
+
   const { data, error } = await supabaseAdmin
     .from("app_clients")
     .select("payload")
@@ -305,11 +402,14 @@ export async function getClientStockCatalog(req, res) {
   return res.json({
     categories: Array.isArray(catalog.categories) ? catalog.categories : [],
     items: Array.isArray(catalog.items) ? catalog.items : [],
+    suppliers: Array.isArray(catalog.suppliers) ? catalog.suppliers : [],
     updatedAt: catalog.updatedAt || null
   });
 }
 
 export async function updateClientStockCatalog(req, res) {
+  if (!requireCompanyAccess(req, res, req.params.id)) return;
+
   const { data: current, error: currentError } = await supabaseAdmin
     .from("app_clients")
     .select("payload")
@@ -322,6 +422,7 @@ export async function updateClientStockCatalog(req, res) {
   const stockCatalog = {
     categories: Array.isArray(req.body.categories) ? req.body.categories : [],
     items: Array.isArray(req.body.items) ? req.body.items : [],
+    suppliers: Array.isArray(req.body.suppliers) ? req.body.suppliers : [],
     updatedAt: new Date().toISOString()
   };
 

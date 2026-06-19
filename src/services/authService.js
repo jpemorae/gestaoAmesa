@@ -1,4 +1,5 @@
 import { initialUsers, STORAGE_KEYS } from "../data/mockData";
+import { clearApiSessionToken } from "./api";
 
 function normalizeUser(user) {
   if (!user?.userType && !user?.companyId) {
@@ -61,4 +62,5 @@ export function clearStoredSession() {
   localStorage.removeItem(STORAGE_KEYS.loggedUser);
   localStorage.removeItem(STORAGE_KEYS.isLogged);
   localStorage.removeItem(STORAGE_KEYS.page);
+  clearApiSessionToken();
 }
