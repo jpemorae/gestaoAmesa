@@ -403,6 +403,7 @@ export async function getClientStockCatalog(req, res) {
     categories: Array.isArray(catalog.categories) ? catalog.categories : [],
     items: Array.isArray(catalog.items) ? catalog.items : [],
     suppliers: Array.isArray(catalog.suppliers) ? catalog.suppliers : [],
+    menuItems: Array.isArray(catalog.menuItems) ? catalog.menuItems : [],
     updatedAt: catalog.updatedAt || null
   });
 }
@@ -423,6 +424,7 @@ export async function updateClientStockCatalog(req, res) {
     categories: Array.isArray(req.body.categories) ? req.body.categories : [],
     items: Array.isArray(req.body.items) ? req.body.items : [],
     suppliers: Array.isArray(req.body.suppliers) ? req.body.suppliers : [],
+    menuItems: Array.isArray(req.body.menuItems) ? req.body.menuItems : [],
     updatedAt: new Date().toISOString()
   };
 
@@ -495,3 +497,4 @@ export async function updateClientBillingData(req, res) {
   if (error) return res.status(400).json({ error: error.message });
   return res.json(data.payload.billingData);
 }
+

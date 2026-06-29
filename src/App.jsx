@@ -215,6 +215,7 @@ export default function App() {
     { id: "cat-limpeza", name: "Limpeza" }
   ], legacyCompanyId);
   const [stockItems, setStockItems] = useTenantPersistentState("gestao_mesa_stock_products", activeCompanyId, [], legacyCompanyId);
+  const [menuItems, setMenuItems] = useTenantPersistentState("gestao_mesa_menu_items", activeCompanyId, [], legacyCompanyId);
   const [stockLots, setStockLots] = useTenantPersistentState("gestao_mesa_stock_lots", activeCompanyId, [], legacyCompanyId);
   const [stockMovements, setStockMovements] = useTenantPersistentState("gestao_mesa_stock_movements", activeCompanyId, [], legacyCompanyId);
   const [stockLosses, setStockLosses] = useTenantPersistentState("gestao_mesa_stock_losses", activeCompanyId, [], legacyCompanyId);
@@ -257,6 +258,21 @@ export default function App() {
     defaultValidityDays: 0
   });
   const [stockCatalogSyncedCompany, setStockCatalogSyncedCompany] = useState("");
+  const emptyMenuItemForm = {
+    dishName: "",
+    type: "Comida",
+    netValue: "",
+    grossValue: "",
+    interestValue: "",
+    saleValue: "",
+    image: "",
+    imageName: "",
+    portions: [{ stockItemId: "", quantity: "", unit: "g" }],
+    status: "Ativo"
+  };
+  const [menuItemForm, setMenuItemForm] = useState(emptyMenuItemForm);
+  const [editingMenuItemId, setEditingMenuItemId] = useState(null);
+  const [showMenuItemModal, setShowMenuItemModal] = useState(false);
   const [stockCatalogSyncState, setStockCatalogSyncState] = useState("local");
 
   function readTenantStoredValue(key, companyId, fallback) {
@@ -268,7 +284,7 @@ export default function App() {
     }
   }
 
-  async function persistStockCatalog(nextCategories = stockCategories, nextItems = stockItems, nextSuppliers = stockSuppliers, options = {}) {
+  async function persistStockCatalog(nextCategories = stockCategories, nextItems = stockItems, nextSuppliers = stockSuppliers, nextMenuItems = menuItems, options = {}) {
     if (!canUseAppDataApi() || !activeCompanyId) {
       setStockCatalogSyncState("local");
       return true;
@@ -279,7 +295,8 @@ export default function App() {
       await saveClientStockCatalog(activeCompanyId, {
         categories: nextCategories,
         items: nextItems,
-        suppliers: nextSuppliers
+        suppliers: nextSuppliers,
+        menuItems: nextMenuItems
       });
       setStockCatalogSyncState("synced");
       return true;
@@ -309,31 +326,48 @@ export default function App() {
         const remoteCategories = Array.isArray(catalog?.categories) ? catalog.categories : [];
         const remoteItems = Array.isArray(catalog?.items) ? catalog.items : [];
         const remoteSuppliers = Array.isArray(catalog?.suppliers) ? catalog.suppliers : [];
-        const hasRemoteCatalog = remoteCategories.length > 0 || remoteItems.length > 0 || remoteSuppliers.length > 0;
+        const remoteMenuItems = Array.isArray(catalog?.menuItems) ? catalog.menuItems : [];
+        const hasRemoteCatalog = remoteCategories.length > 0 || remoteItems.length > 0 || remoteSuppliers.length > 0 || remoteMenuItems.length > 0;
 
         if (hasRemoteCatalog) {
+          const localCategories = readTenantStoredValue("gestao_mesa_stock_categories", activeCompanyId, stockCategories);
+          const localItems = readTenantStoredValue("gestao_mesa_stock_products", activeCompanyId, stockItems);
           const localSuppliers = readTenantStoredValue("gestao_mesa_stock_suppliers", activeCompanyId, stockSuppliers);
+          const localMenuItems = readTenantStoredValue("gestao_mesa_menu_items", activeCompanyId, menuItems);
+          const nextCategories = remoteCategories.length > 0
+            ? remoteCategories
+            : (Array.isArray(localCategories) ? localCategories : stockCategories);
+          const nextItems = remoteItems.length > 0
+            ? remoteItems
+            : (Array.isArray(localItems) ? localItems : stockItems);
           const nextSuppliers = remoteSuppliers.length > 0
             ? remoteSuppliers
             : (Array.isArray(localSuppliers) ? localSuppliers : stockSuppliers);
-          setStockCategories(remoteCategories);
-          setStockItems(remoteItems);
+          const nextMenuItems = remoteMenuItems.length > 0
+            ? remoteMenuItems
+            : (Array.isArray(localMenuItems) ? localMenuItems : menuItems);
+          setStockCategories(nextCategories);
+          setStockItems(nextItems);
           setStockSuppliers(nextSuppliers);
-          if (remoteSuppliers.length === 0 && nextSuppliers.length > 0) {
+          setMenuItems(nextMenuItems);
+          if ((remoteCategories.length === 0 && nextCategories.length > 0) || (remoteItems.length === 0 && nextItems.length > 0) || (remoteSuppliers.length === 0 && nextSuppliers.length > 0) || (remoteMenuItems.length === 0 && nextMenuItems.length > 0)) {
             await saveClientStockCatalog(activeCompanyId, {
-              categories: remoteCategories,
-              items: remoteItems,
-              suppliers: nextSuppliers
+              categories: nextCategories,
+              items: nextItems,
+              suppliers: nextSuppliers,
+              menuItems: nextMenuItems
             });
           }
         } else {
           const localCategories = readTenantStoredValue("gestao_mesa_stock_categories", activeCompanyId, stockCategories);
           const localItems = readTenantStoredValue("gestao_mesa_stock_products", activeCompanyId, stockItems);
           const localSuppliers = readTenantStoredValue("gestao_mesa_stock_suppliers", activeCompanyId, stockSuppliers);
+          const localMenuItems = readTenantStoredValue("gestao_mesa_menu_items", activeCompanyId, menuItems);
           await saveClientStockCatalog(activeCompanyId, {
             categories: Array.isArray(localCategories) ? localCategories : [],
             items: Array.isArray(localItems) ? localItems : [],
-            suppliers: Array.isArray(localSuppliers) ? localSuppliers : []
+            suppliers: Array.isArray(localSuppliers) ? localSuppliers : [],
+            menuItems: Array.isArray(localMenuItems) ? localMenuItems : []
           });
         }
 
@@ -352,7 +386,6 @@ export default function App() {
       active = false;
     };
   }, [activeCompanyId, stockCatalogSyncedCompany]);
-
   const [processActivityForm, setProcessActivityForm] = useState({
     name: "",
     type: "Processo",
@@ -1083,6 +1116,109 @@ export default function App() {
       active = false;
     };
   }, [activeCompanyId, isLogged]);
+
+  function resetMenuItemForm() {
+    setMenuItemForm({ ...emptyMenuItemForm, portions: [{ stockItemId: "", quantity: "", unit: "g" }] });
+    setEditingMenuItemId(null);
+    setShowMenuItemModal(false);
+  }
+
+  function handleMenuImage(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Envie uma imagem do produto.");
+      event.target.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setMenuItemForm((current) => ({ ...current, image: reader.result, imageName: file.name }));
+    };
+    reader.readAsDataURL(file);
+    event.target.value = "";
+  }
+
+  function updateMenuPortion(index, field, value) {
+    const portions = menuItemForm.portions.map((portion, currentIndex) => currentIndex === index ? { ...portion, [field]: value } : portion);
+    if (field === "stockItemId") {
+      const selected = stockItemsView.find((item) => item.id === value);
+      portions[index].unit = compatibleUnitsFor(selected?.unit || "g")[0];
+    }
+    setMenuItemForm({ ...menuItemForm, portions });
+  }
+
+  function addMenuPortion() {
+    setMenuItemForm({ ...menuItemForm, portions: [...menuItemForm.portions, { stockItemId: "", quantity: "", unit: "g" }] });
+  }
+
+  function removeMenuPortion(index) {
+    const portions = menuItemForm.portions.filter((_, currentIndex) => currentIndex !== index);
+    setMenuItemForm({ ...menuItemForm, portions: portions.length ? portions : [{ stockItemId: "", quantity: "", unit: "g" }] });
+  }
+
+  async function saveMenuItem(event) {
+    event.preventDefault();
+    const dishName = menuItemForm.dishName.trim();
+    if (!dishName) return alert("Informe o prato/produto do menu.");
+    if (!menuItemForm.saleValue || parseMoneyValue(menuItemForm.saleValue) <= 0) return alert("Informe o valor de venda.");
+
+    const portions = menuItemForm.portions
+      .filter((portion) => portion.stockItemId && Number(portion.quantity) > 0)
+      .map((portion) => {
+        const item = stockItemsView.find((currentItem) => currentItem.id === portion.stockItemId);
+        return {
+          stockItemId: portion.stockItemId,
+          stockItemName: item?.name || "",
+          quantity: Number(portion.quantity || 0),
+          unit: portion.unit
+        };
+      });
+
+    const record = {
+      id: editingMenuItemId || crypto.randomUUID(),
+      dishName,
+      type: menuItemForm.type,
+      netValue: parseMoneyValue(menuItemForm.netValue),
+      grossValue: parseMoneyValue(menuItemForm.grossValue),
+      interestValue: parseMoneyValue(menuItemForm.interestValue),
+      saleValue: parseMoneyValue(menuItemForm.saleValue),
+      image: menuItemForm.image,
+      imageName: menuItemForm.imageName,
+      portions,
+      status: menuItemForm.status || "Ativo",
+      updatedAt: new Date().toISOString(),
+      createdAt: editingMenuItemId ? menuItems.find((item) => item.id === editingMenuItemId)?.createdAt : new Date().toISOString()
+    };
+
+    const nextMenuItems = editingMenuItemId
+      ? menuItems.map((item) => item.id === editingMenuItemId ? record : item)
+      : [record, ...menuItems];
+    setMenuItems(nextMenuItems);
+    await persistStockCatalog(stockCategories, stockItems, stockSuppliers, nextMenuItems, { silent: true });
+    resetMenuItemForm();
+  }
+
+  function editMenuItem(item) {
+    setMenuItemForm({
+      ...emptyMenuItemForm,
+      ...item,
+      netValue: item.netValue || "",
+      grossValue: item.grossValue || "",
+      interestValue: item.interestValue || "",
+      saleValue: item.saleValue || "",
+      portions: item.portions?.length ? item.portions : [{ stockItemId: "", quantity: "", unit: "g" }]
+    });
+    setEditingMenuItemId(item.id);
+    setShowMenuItemModal(true);
+  }
+
+  function deleteMenuItem(menuItemId) {
+    if (!confirm("Deseja excluir este item do menu?")) return;
+    const nextMenuItems = menuItems.filter((item) => item.id !== menuItemId);
+    setMenuItems(nextMenuItems);
+    persistStockCatalog(stockCategories, stockItems, stockSuppliers, nextMenuItems, { silent: true });
+  }
   async function addStockCategory(event) {
     event.preventDefault();
     const name = stockCategoryName.trim();
@@ -1501,6 +1637,12 @@ export default function App() {
       setStockCadastroType("categoria");
       setShowStockCategoryModal(true);
       return;
+    }
+
+    if (type === "menu") {
+      setStockCadastroType("menu");
+      resetMenuItemForm();
+      setShowMenuItemModal(true);
     }
   }
 
@@ -2389,7 +2531,8 @@ export default function App() {
   function renderStockCadastro() {
     const stockCadastroActions = [
       { id: "product", type: "produto", title: "Cadastro de produto", detail: "Produto, item, unidade, categoria, custo e status.", button: "Cadastro de produto", variant: "primary" },
-      { id: "category", type: "categoria", title: "Cadastro de categoria", detail: "Crie e organize categorias usadas nos produtos e itens.", button: "Cadastro de categoria", variant: "primary" }
+      { id: "category", type: "categoria", title: "Cadastro de categoria", detail: "Crie e organize categorias usadas nos produtos e itens.", button: "Cadastro de categoria", variant: "primary" },
+      { id: "menu", type: "menu", title: "Cadastro de menu", detail: "Pratos, bebidas, preços, imagem e porcionamento para venda.", button: "Cadastro de menu", variant: "primary" }
     ];
 
     return (
@@ -2422,10 +2565,42 @@ export default function App() {
               </article>
             ))}
           </div>
+          {menuItems.length > 0 && (
+            <div className="stock-table-wrap menu-items-table">
+              <h3>Itens de menu cadastrados</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Imagem</th>
+                    <th>Prato</th>
+                    <th>Tipo</th>
+                    <th>Venda</th>
+                    <th>Porcionamento</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {menuItems.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.image ? <img className="menu-table-image" src={item.image} alt={item.dishName} /> : "--"}</td>
+                      <td><strong>{item.dishName}</strong></td>
+                      <td>{item.type}</td>
+                      <td>{money(Number(item.saleValue || 0))}</td>
+                      <td>{(item.portions || []).length} item(ns)</td>
+                      <td>{item.status}</td>
+                      <td><div className="action-buttons"><button type="button" onClick={() => editMenuItem(item)}>Editar</button><button type="button" onClick={() => deleteMenuItem(item.id)}>Excluir</button></div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         {stockModal === "product" && renderStockProductModal()}
         {showStockCategoryModal && renderStockCategoryModal()}
+        {showMenuItemModal && renderMenuItemModal()}
 
       </>
     );
@@ -2597,6 +2772,39 @@ export default function App() {
 
   function selectedStockModalItem(form) {
     return stockItemsView.find((item) => item.id === form.itemId);
+  }
+
+  function renderMenuItemModal() {
+    const stockProductOptions = stockItemsView.filter((item) => item.type === "Produto" || item.type === "Item");
+    return (
+      <StockModal title={editingMenuItemId ? "Editar item do menu" : "Cadastro de menu"} onClose={resetMenuItemForm}>
+        <p className="stock-help stock-modal-help">Cadastre pratos e bebidas com preço e porcionamento. Esses dados ficam prontos para futura baixa automática no estoque ao registrar uma venda.</p>
+        <form className="stock-form-grid stock-modal-form" onSubmit={saveMenuItem}>
+          <label>Prato / produto<input value={menuItemForm.dishName} onChange={(event) => setMenuItemForm({ ...menuItemForm, dishName: event.target.value })} placeholder="Ex: Filé à parmegiana" /></label>
+          <label>Tipo<select value={menuItemForm.type} onChange={(event) => setMenuItemForm({ ...menuItemForm, type: event.target.value })}><option>Comida</option><option>Bebida</option></select></label>
+          <label>Valor líquido<input value={menuItemForm.netValue} onChange={(event) => setMenuItemForm({ ...menuItemForm, netValue: event.target.value })} placeholder="Ex: 25,00" /></label>
+          <label>Valor bruto<input value={menuItemForm.grossValue} onChange={(event) => setMenuItemForm({ ...menuItemForm, grossValue: event.target.value })} placeholder="Ex: 32,00" /></label>
+          <label>Valor com juros<input value={menuItemForm.interestValue} onChange={(event) => setMenuItemForm({ ...menuItemForm, interestValue: event.target.value })} placeholder="Ex: 34,00" /></label>
+          <label>Valor de venda<input value={menuItemForm.saleValue} onChange={(event) => setMenuItemForm({ ...menuItemForm, saleValue: event.target.value })} placeholder="Ex: 39,90" /></label>
+          <label>Status<select value={menuItemForm.status} onChange={(event) => setMenuItemForm({ ...menuItemForm, status: event.target.value })}><option>Ativo</option><option>Inativo</option></select></label>
+          <label>Imagem do produto<input type="file" accept="image/*" onChange={handleMenuImage} /></label>
+          {menuItemForm.image && (<div className="menu-image-preview"><img src={menuItemForm.image} alt={menuItemForm.dishName || "Item do menu"} /><button className="secondary" type="button" onClick={() => setMenuItemForm({ ...menuItemForm, image: "", imageName: "" })}>Remover imagem</button></div>)}
+
+          <div className="menu-portion-box">
+            <div className="stock-title-row compact"><div><strong>Porcionamento</strong><p className="stock-help">Informe quais itens do estoque compõem este produto.</p></div><button className="secondary" type="button" onClick={addMenuPortion}>Adicionar item</button></div>
+            {menuItemForm.portions.map((portion, index) => (
+              <div className="menu-portion-row" key={index}>
+                <select value={portion.stockItemId} onChange={(event) => updateMenuPortion(index, "stockItemId", event.target.value)}><option value="">Selecione o item</option>{stockProductOptions.map((item) => <option key={item.id} value={item.id}>{item.name} - {item.category}</option>)}</select>
+                <input type="number" step="0.001" value={portion.quantity} onChange={(event) => updateMenuPortion(index, "quantity", event.target.value)} placeholder="Qtd." />
+                <select value={portion.unit} onChange={(event) => updateMenuPortion(index, "unit", event.target.value)}>{compatibleUnitsFor(stockItemsView.find((item) => item.id === portion.stockItemId)?.unit || "g").map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}</select>
+                <button className="danger" type="button" onClick={() => removeMenuPortion(index)}>Remover</button>
+              </div>
+            ))}
+          </div>
+          <div className="stock-modal-footer"><button className="secondary" type="button" onClick={resetMenuItemForm}>Cancelar</button><button className="primary" type="submit">{editingMenuItemId ? "Salvar menu" : "Cadastrar menu"}</button></div>
+        </form>
+      </StockModal>
+    );
   }
 
   function renderStockProductModal() {
@@ -5450,6 +5658,15 @@ export default function App() {
     </AppShell>
   );
 }
+
+
+
+
+
+
+
+
+
 
 
 
