@@ -3936,6 +3936,27 @@ export default function App() {
     }));
   }
 
+
+  function saleHasPayment(sale) {
+    const salePaid = Number(sale.paidAmount || 0) > 0 || sale.paymentStatus === "Pago" || sale.status === "Paga";
+    const linkedPaid = billingCharges.some((charge) => charge.saleId === sale.id && Number(charge.paidAmount || 0) > 0);
+    return salePaid || linkedPaid;
+  }
+
+  function deleteSale(sale) {
+    if (saleHasPayment(sale)) {
+      alert("Não é possível excluir uma venda que já possui pagamento registrado.");
+      return;
+    }
+    if (!confirm("Deseja excluir esta venda? Esta ação remove o registro sem apagar vendas pagas.")) return;
+    const nextSales = salesRecords.filter((current) => current.id !== sale.id);
+    const nextCharges = billingCharges.filter((charge) => charge.saleId !== sale.id);
+    setSalesRecords(nextSales);
+    setBillingCharges(nextCharges);
+    persistSalesData(nextSales, { silent: true });
+    if (nextCharges.length !== billingCharges.length) persistBillingData(billingCustomers, nextCharges, { silent: true });
+  }
+
   function markSalePaid(sale) {
     updateSaleRecord(sale.id, (current) => ({
       ...current,
@@ -4624,6 +4645,7 @@ export default function App() {
                           <button type="button" onClick={() => { setOpenSaleActionId(""); window.print(); }}>Imprimir</button>
                           <a className="button-link menu-link" href={saleWhatsappUrl(sale)} target="_blank" rel="noreferrer">WhatsApp</a>
                           <button type="button" className="danger-action" onClick={() => { setOpenSaleActionId(""); cancelSale(sale); }}>Cancelar</button>
+                          <button type="button" className="danger-action" onClick={() => { setOpenSaleActionId(""); deleteSale(sale); }}>Excluir</button>
                         </div>
                       )}
                     </div>
