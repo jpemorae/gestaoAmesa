@@ -19,9 +19,14 @@ export const MODULE_INFO = {
     icon: "✅",
     description: "Execução, evidências, recorrência e histórico operacional."
   },
-  acesso: {
+  faturamento: {
+    title: "Faturamento",
+    icon: "$",
+    description: "Clientes, cobrancas, pagamentos e inadimplencia."
+  },  acesso: {
     title: "Cadastros",
     icon: "⚙️",
     description: "Produtos, usuários, áreas, processos e atividades."
   }
 };
+

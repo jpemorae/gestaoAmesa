@@ -23,11 +23,13 @@ import {
   canUseAppDataApi,
   loadAppData,
   loadClientStockCatalog,
+  loadClientBillingData,
   loginAppUser,
   removeAppClient,
   removeAppUser,
   saveAppClient,
   saveClientStockCatalog,
+  saveClientBillingData,
   saveAppUser
 } from "./services/appDataService";
 import {
@@ -129,7 +131,7 @@ export default function App() {
     financialStatus: "Em dia",
     themeColor: "#0b2f4f",
     status: "Ativo",
-    enabledModules: ["acompanhamento", "estoque", "etiquetas", "checklist", "acesso"]
+    enabledModules: ["acompanhamento", "estoque", "etiquetas", "checklist", "faturamento", "acesso"]
   };
 
   const emptyUserForm = {
@@ -453,7 +455,7 @@ export default function App() {
     telegramUsername: "",
     telegramChatId: "",
     telegramPhone: "",
-    allowedModules: ["checklist", "acesso"]
+    allowedModules: ["checklist", "faturamento", "acesso"]
   });
   const [editingStockUserId, setEditingStockUserId] = useState(null);
   const [showStockUserModal, setShowStockUserModal] = useState(false);
@@ -466,6 +468,44 @@ export default function App() {
   const [checklistAreaFilter, setChecklistAreaFilter] = useState("Todas");
   const [checklistExecutor, setChecklistExecutor] = useState("");
 
+  const emptyBillingCustomerForm = {
+    fullName: "",
+    cpf: "",
+    birthDate: "",
+    phone: "",
+    email: "",
+    zipCode: "",
+    address: "",
+    number: "",
+    complement: "",
+    district: "",
+    city: "",
+    state: "",
+    status: "Ativo",
+    notes: "",
+    registeredAt: today()
+  };
+  const emptyBillingChargeForm = {
+    customerId: "",
+    paymentMethod: "PIX",
+    chargeType: "À vista",
+    totalAmount: "",
+    installments: "1",
+    installmentAmount: "",
+    firstDueDate: today(),
+    fixedDueDay: "",
+    notes: ""
+  };
+  const [billingPage, setBillingPage] = useState("dashboard");
+  const [billingCustomers, setBillingCustomers] = useTenantPersistentState("gestao_mesa_billing_customers", activeCompanyId, [], legacyCompanyId);
+  const [billingCharges, setBillingCharges] = useTenantPersistentState("gestao_mesa_billing_charges", activeCompanyId, [], legacyCompanyId);
+  const [billingCustomerForm, setBillingCustomerForm] = useState(emptyBillingCustomerForm);
+  const [editingBillingCustomerId, setEditingBillingCustomerId] = useState(null);
+  const [billingChargeForm, setBillingChargeForm] = useState(emptyBillingChargeForm);
+  const [billingFilters, setBillingFilters] = useState({ customer: "", cpf: "", status: "Todos", paymentMethod: "Todos", periodStart: "", periodEnd: "", view: "Todos" });
+  const [selectedBillingCustomerId, setSelectedBillingCustomerId] = useState("");
+  const [selectedBillingCharge, setSelectedBillingCharge] = useState(null);
+
   useEffect(() => {
     const migrationKey = "gestao_mesa_migration_dashboard_module_v1";
     if (localStorage.getItem(migrationKey)) return;
@@ -476,6 +516,21 @@ export default function App() {
     })));
     localStorage.setItem(migrationKey, "true");
   }, [setClients]);
+
+  useEffect(() => {
+    const migrationKey = "gestao_mesa_migration_billing_module_v1";
+    if (localStorage.getItem(migrationKey)) return;
+
+    setClients((currentClients) => currentClients.map((client) => ({
+      ...client,
+      enabledModules: Array.from(new Set([...(client.enabledModules || []), "faturamento"]))
+    })));
+    setUsers((currentUsers) => currentUsers.map((user) => user.userType === "client" ? {
+      ...user,
+      allowedModules: Array.from(new Set([...(user.allowedModules || ["checklist", "faturamento", "acesso"]), "faturamento"]))
+    } : user));
+    localStorage.setItem(migrationKey, "true");
+  }, [setClients, setUsers]);
 
   const monthlyRevenue = useMemo(
     () => clients.reduce((sum, client) => sum + Number(client.monthlyFee || 0), 0),
@@ -655,7 +710,7 @@ export default function App() {
       financialStatus: client.financialStatus || "Em dia",
       themeColor: client.themeColor || "#0b2f4f",
       status: client.status || "Ativo",
-      enabledModules: client.enabledModules || ["acompanhamento", "estoque", "checklist", "etiquetas"]
+      enabledModules: client.enabledModules || ["acompanhamento", "estoque", "checklist", "faturamento", "etiquetas"]
     });
     setPage("clients");
   }
@@ -979,6 +1034,50 @@ export default function App() {
     return stockSuppliers.map(supplierRecord);
   }
 
+
+  async function persistBillingData(nextCustomers = billingCustomers, nextCharges = billingCharges, options = {}) {
+    if (!canUseAppDataApi() || !activeCompanyId) return true;
+    try {
+      await saveClientBillingData(activeCompanyId, {
+        customers: nextCustomers,
+        charges: nextCharges
+      });
+      return true;
+    } catch (error) {
+      if (!options.silent) alert(`Faturamento salvo neste computador, mas nao sincronizado no banco: ${error.message}`);
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    if (!canUseAppDataApi() || !activeCompanyId || !isLogged) return;
+    let active = true;
+
+    loadClientBillingData(activeCompanyId)
+      .then(async (data) => {
+        if (!active || !data) return;
+        const remoteCustomers = Array.isArray(data.customers) ? data.customers : [];
+        const remoteCharges = Array.isArray(data.charges) ? data.charges : [];
+        if (remoteCustomers.length || remoteCharges.length) {
+          setBillingCustomers(remoteCustomers);
+          setBillingCharges(remoteCharges);
+          return;
+        }
+        const localCustomers = readTenantStoredValue("gestao_mesa_billing_customers", activeCompanyId, billingCustomers);
+        const localCharges = readTenantStoredValue("gestao_mesa_billing_charges", activeCompanyId, billingCharges);
+        if ((Array.isArray(localCustomers) && localCustomers.length) || (Array.isArray(localCharges) && localCharges.length)) {
+          await saveClientBillingData(activeCompanyId, {
+            customers: Array.isArray(localCustomers) ? localCustomers : [],
+            charges: Array.isArray(localCharges) ? localCharges : []
+          });
+        }
+      })
+      .catch((error) => console.warn("Falha ao sincronizar faturamento:", error.message));
+
+    return () => {
+      active = false;
+    };
+  }, [activeCompanyId, isLogged]);
   async function addStockCategory(event) {
     event.preventDefault();
     const name = stockCategoryName.trim();
@@ -1726,7 +1825,7 @@ export default function App() {
       telegramUsername: "",
       telegramChatId: "",
       telegramPhone: "",
-      allowedModules: ["checklist", "acesso"]
+      allowedModules: ["checklist", "faturamento", "acesso"]
     });
     setEditingStockUserId(null);
     setShowStockUserModal(false);
@@ -1761,7 +1860,7 @@ export default function App() {
       telegramUsername: user.telegramUsername || "",
       telegramChatId: user.telegramChatId || "",
       telegramPhone: user.telegramPhone || "",
-      allowedModules: user.allowedModules || ["checklist", "acesso"]
+      allowedModules: user.allowedModules || ["checklist", "faturamento", "acesso"]
     });
     setShowStockUserModal(true);
   }
@@ -1960,6 +2059,50 @@ export default function App() {
 
     return checklistAreaFilter === "Todas" || activity.area === checklistAreaFilter;
   });
+
+  function checklistStatusFor(activity) {
+    if (completedTodayIds.has(activity.id)) return "done";
+    if (pendingChecklist[activity.id]) return "pending";
+    if (runningChecklist[activity.id]) return "running";
+    return "waiting";
+  }
+
+  function checklistStatusLabel(activity) {
+    const status = checklistStatusFor(activity);
+    if (status === "done") return "Concluído";
+    if (status === "pending") return "Pendência";
+    if (status === "running") return "Em andamento";
+    return "A fazer";
+  }
+
+  function timeToMinutes(value) {
+    const [hours = "99", minutes = "99"] = String(value || "99:99").split(":");
+    return Number(hours) * 60 + Number(minutes);
+  }
+
+  function sortChecklistActivities(list) {
+    return [...list].sort((left, right) => {
+      const timeDiff = timeToMinutes(left.startTime) - timeToMinutes(right.startTime);
+      if (timeDiff !== 0) return timeDiff;
+      return String(left.name || "").localeCompare(String(right.name || ""));
+    });
+  }
+
+  function nextChecklistActivity(list) {
+    return sortChecklistActivities(list).find((activity) => checklistStatusFor(activity) === "waiting") || null;
+  }
+
+  function checklistProgressFor(list) {
+    const total = list.length;
+    const done = list.filter((activity) => completedTodayIds.has(activity.id)).length;
+    return {
+      total,
+      done,
+      running: list.filter((activity) => runningChecklist[activity.id]).length,
+      pending: list.filter((activity) => pendingChecklist[activity.id]).length,
+      percent: total ? Math.round((done / total) * 100) : 0
+    };
+  }
 
 
   function handleChecklistEvidence(activityId, event) {
@@ -3130,6 +3273,430 @@ export default function App() {
   }
 
 
+
+  function onlyDigits(value) {
+    return String(value || "").replace(/\D/g, "");
+  }
+
+  function maskCpf(value) {
+    const digits = onlyDigits(value).slice(0, 11);
+    return digits
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  }
+
+  function isValidCpf(value) {
+    const cpf = onlyDigits(value);
+    if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;
+    const calc = (base) => {
+      let sum = 0;
+      for (let index = 0; index < base; index += 1) sum += Number(cpf[index]) * (base + 1 - index);
+      const rest = (sum * 10) % 11;
+      return rest === 10 ? 0 : rest;
+    };
+    return calc(9) === Number(cpf[9]) && calc(10) === Number(cpf[10]);
+  }
+
+  function maskCep(value) {
+    return onlyDigits(value).slice(0, 8).replace(/(\d{5})(\d)/, "$1-$2");
+  }
+
+  function parseMoneyValue(value) {
+    const raw = String(value || "").replace(/[^\d,.-]/g, "");
+    if (!raw) return 0;
+    if (raw.includes(",")) return Number(raw.replace(/\./g, "").replace(",", ".")) || 0;
+    return Number(raw) || 0;
+  }
+
+  function isoDate(date) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  function addMonthsToDate(dateString, monthOffset, fixedDay = "") {
+    const base = dateString ? new Date(`${dateString}T00:00:00`) : new Date();
+    const year = base.getFullYear();
+    const month = base.getMonth() + monthOffset;
+    const target = new Date(year, month, 1);
+    const wantedDay = Number(fixedDay || base.getDate());
+    const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+    target.setDate(Math.min(Math.max(wantedDay, 1), lastDay));
+    return isoDate(target);
+  }
+
+  function billingCustomerById(customerId) {
+    return billingCustomers.find((customer) => customer.id === customerId) || null;
+  }
+
+  function billingChargePaidAmount(charge) {
+    return Number(charge.paidAmount || 0);
+  }
+
+  function billingChargeOpenAmount(charge) {
+    return Math.max(Number(charge.amount || 0) - billingChargePaidAmount(charge), 0);
+  }
+
+  function billingChargeStatus(charge) {
+    if (charge.status === "Cancelado") return "Cancelado";
+    if (charge.status === "Pago" || billingChargeOpenAmount(charge) <= 0) return "Pago";
+    const days = diffDays(charge.dueDate);
+    if (days < 0) return "Vencido";
+    if (days === 0) return "Vence hoje";
+    return "A vencer";
+  }
+
+  function resetBillingCustomerForm() {
+    setBillingCustomerForm({ ...emptyBillingCustomerForm, registeredAt: today() });
+    setEditingBillingCustomerId(null);
+  }
+
+  function resetBillingChargeForm() {
+    setBillingChargeForm({ ...emptyBillingChargeForm, firstDueDate: today() });
+  }
+
+  function saveBillingCustomer(event) {
+    event.preventDefault();
+    const fullName = billingCustomerForm.fullName.trim();
+    const cpf = maskCpf(billingCustomerForm.cpf);
+    if (!fullName) return alert("Informe o nome completo.");
+    if (!isValidCpf(cpf)) return alert("Informe um CPF valido.");
+    if (!billingCustomerForm.phone.trim()) return alert("Informe o telefone/WhatsApp.");
+
+    const duplicateCpf = billingCustomers.some((customer) => customer.id !== editingBillingCustomerId && onlyDigits(customer.cpf) === onlyDigits(cpf));
+    if (duplicateCpf) return alert("Ja existe cliente cadastrado com este CPF.");
+
+    const record = {
+      ...billingCustomerForm,
+      id: editingBillingCustomerId || crypto.randomUUID(),
+      fullName,
+      cpf,
+      zipCode: maskCep(billingCustomerForm.zipCode),
+      registeredAt: billingCustomerForm.registeredAt || today(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const nextCustomers = editingBillingCustomerId
+      ? billingCustomers.map((customer) => customer.id === editingBillingCustomerId ? record : customer)
+      : [record, ...billingCustomers];
+    setBillingCustomers(nextCustomers);
+    persistBillingData(nextCustomers, billingCharges, { silent: true });
+    setSelectedBillingCustomerId(record.id);
+    resetBillingCustomerForm();
+  }
+
+  function editBillingCustomer(customer) {
+    setBillingCustomerForm({ ...emptyBillingCustomerForm, ...customer });
+    setEditingBillingCustomerId(customer.id);
+    setBillingPage("clientes");
+  }
+
+  function buildBillingInstallments() {
+    const totalAmount = parseMoneyValue(billingChargeForm.totalAmount);
+    const chargeType = billingChargeForm.chargeType;
+    const totalInstallments = chargeType === "À vista" ? 1 : Math.max(Number(billingChargeForm.installments || 1), 1);
+    const amount = parseMoneyValue(billingChargeForm.installmentAmount) || Number((totalAmount / totalInstallments).toFixed(2));
+    const parentChargeId = crypto.randomUUID();
+
+    return Array.from({ length: totalInstallments }).map((_, index) => {
+      const dueDate = addMonthsToDate(billingChargeForm.firstDueDate, index, chargeType === "Recorrente mensal" ? billingChargeForm.fixedDueDay : "");
+      return {
+        id: crypto.randomUUID(),
+        parentChargeId,
+        customerId: billingChargeForm.customerId,
+        paymentMethod: billingChargeForm.paymentMethod,
+        chargeType,
+        totalAmount,
+        amount,
+        paidAmount: 0,
+        installmentNumber: index + 1,
+        totalInstallments,
+        dueDate,
+        fixedDueDay: billingChargeForm.fixedDueDay,
+        status: "A vencer",
+        notes: billingChargeForm.notes || "",
+        history: [{ date: new Date().toLocaleString("pt-BR"), action: "Cobrança criada", note: `Parcela ${index + 1}/${totalInstallments}` }],
+        createdAt: new Date().toISOString()
+      };
+    });
+  }
+
+  function saveBillingCharge(event) {
+    event.preventDefault();
+    if (!billingChargeForm.customerId) return alert("Selecione um cliente.");
+    if (parseMoneyValue(billingChargeForm.totalAmount) <= 0) return alert("Informe um valor total maior que zero.");
+    if (!billingChargeForm.firstDueDate) return alert("Informe a data do primeiro vencimento.");
+    if (billingChargeForm.chargeType !== "À vista" && Number(billingChargeForm.installments || 0) <= 0) return alert("Informe a quantidade de parcelas.");
+
+    const installments = buildBillingInstallments();
+    const nextCharges = [...installments, ...billingCharges];
+    setBillingCharges(nextCharges);
+    persistBillingData(billingCustomers, nextCharges, { silent: true });
+    resetBillingChargeForm();
+    setBillingPage("cobrancas");
+  }
+
+  function updateBillingCharge(chargeId, updater) {
+    const nextCharges = billingCharges.map((charge) => charge.id === chargeId ? updater(charge) : charge);
+    setBillingCharges(nextCharges);
+    persistBillingData(billingCustomers, nextCharges, { silent: true });
+  }
+
+  function addBillingHistory(charge, action, note = "") {
+    return [...(charge.history || []), { date: new Date().toLocaleString("pt-BR"), action, note }];
+  }
+
+  function markBillingChargePaid(charge) {
+    updateBillingCharge(charge.id, (current) => ({
+      ...current,
+      paidAmount: Number(current.amount || 0),
+      status: "Pago",
+      paidAt: today(),
+      history: addBillingHistory(current, "Pagamento integral", money(Number(current.amount || 0)))
+    }));
+  }
+
+  function registerBillingPartialPayment(charge) {
+    const value = parseMoneyValue(window.prompt("Valor do pagamento parcial:", ""));
+    if (value <= 0) return alert("Informe um valor maior que zero.");
+    updateBillingCharge(charge.id, (current) => {
+      const nextPaid = Math.min(Number(current.amount || 0), billingChargePaidAmount(current) + value);
+      const paid = nextPaid >= Number(current.amount || 0);
+      return {
+        ...current,
+        paidAmount: nextPaid,
+        status: paid ? "Pago" : billingChargeStatus(current),
+        paidAt: paid ? today() : current.paidAt,
+        history: addBillingHistory(current, "Pagamento parcial", money(value))
+      };
+    });
+  }
+
+  function editBillingDueDate(charge) {
+    const dueDate = window.prompt("Novo vencimento (AAAA-MM-DD):", charge.dueDate);
+    if (!dueDate) return;
+    updateBillingCharge(charge.id, (current) => ({
+      ...current,
+      dueDate,
+      history: addBillingHistory(current, "Vencimento editado", dueDate)
+    }));
+  }
+
+  function cancelBillingCharge(charge) {
+    if (!confirm("Deseja cancelar esta cobrança?")) return;
+    updateBillingCharge(charge.id, (current) => ({
+      ...current,
+      status: "Cancelado",
+      history: addBillingHistory(current, "Cobrança cancelada")
+    }));
+  }
+
+  function addBillingObservation(charge) {
+    const note = window.prompt("Observação da cobrança:", charge.notes || "");
+    if (note === null) return;
+    updateBillingCharge(charge.id, (current) => ({
+      ...current,
+      notes: note,
+      history: addBillingHistory(current, "Observação adicionada", note)
+    }));
+  }
+
+  function billingMetrics() {
+    const now = new Date();
+    const month = now.getMonth();
+    const year = now.getFullYear();
+    const isCurrentMonth = (date) => {
+      const current = new Date(`${date}T00:00:00`);
+      return current.getMonth() === month && current.getFullYear() === year;
+    };
+    const activeCharges = billingCharges.filter((charge) => billingChargeStatus(charge) !== "Cancelado");
+    const totalToReceive = activeCharges.filter((charge) => isCurrentMonth(charge.dueDate) && billingChargeStatus(charge) !== "Pago").reduce((sum, charge) => sum + billingChargeOpenAmount(charge), 0);
+    const totalReceived = activeCharges.filter((charge) => charge.paidAt && isCurrentMonth(charge.paidAt)).reduce((sum, charge) => sum + billingChargePaidAmount(charge), 0);
+    const overdue = activeCharges.filter((charge) => billingChargeStatus(charge) === "Vencido");
+    const overdueCustomerIds = new Set(overdue.map((charge) => charge.customerId));
+    return {
+      totalToReceive,
+      totalReceived,
+      totalOverdue: overdue.reduce((sum, charge) => sum + billingChargeOpenAmount(charge), 0),
+      delinquentCustomers: billingCustomers.filter((customer) => customer.status === "Inadimplente" || overdueCustomerIds.has(customer.id)).length,
+      dueToday: activeCharges.filter((charge) => billingChargeStatus(charge) === "Vence hoje").length,
+      dueNext7: activeCharges.filter((charge) => {
+        const days = diffDays(charge.dueDate);
+        return days > 0 && days <= 7 && billingChargeStatus(charge) !== "Pago";
+      }).length
+    };
+  }
+
+  function filteredBillingCharges() {
+    return billingCharges.filter((charge) => {
+      const customer = billingCustomerById(charge.customerId);
+      const status = billingChargeStatus(charge);
+      const matchesCustomer = !billingFilters.customer || (customer?.fullName || "").toLowerCase().includes(billingFilters.customer.toLowerCase());
+      const matchesCpf = !billingFilters.cpf || onlyDigits(customer?.cpf).includes(onlyDigits(billingFilters.cpf));
+      const matchesStatus = billingFilters.status === "Todos" || status === billingFilters.status;
+      const matchesPayment = billingFilters.paymentMethod === "Todos" || charge.paymentMethod === billingFilters.paymentMethod;
+      const matchesStart = !billingFilters.periodStart || charge.dueDate >= billingFilters.periodStart;
+      const matchesEnd = !billingFilters.periodEnd || charge.dueDate <= billingFilters.periodEnd;
+      const matchesView = billingFilters.view === "Todos"
+        || (billingFilters.view === "Pagos" && status === "Pago")
+        || (billingFilters.view === "Vencidos" && status === "Vencido")
+        || (billingFilters.view === "Em aberto" && !["Pago", "Cancelado"].includes(status));
+      return matchesCustomer && matchesCpf && matchesStatus && matchesPayment && matchesStart && matchesEnd && matchesView;
+    });
+  }
+
+  function customerFinancialSummary(customerId) {
+    const charges = billingCharges.filter((charge) => charge.customerId === customerId && billingChargeStatus(charge) !== "Cancelado");
+    const payments = charges.flatMap((charge) => (charge.history || []).filter((item) => item.action.includes("Pagamento")).map((item) => ({ ...item, charge })));
+    return {
+      totalBought: charges.reduce((sum, charge) => sum + Number(charge.amount || 0), 0),
+      totalPaid: charges.reduce((sum, charge) => sum + billingChargePaidAmount(charge), 0),
+      totalOpen: charges.reduce((sum, charge) => sum + billingChargeOpenAmount(charge), 0),
+      totalOverdue: charges.filter((charge) => billingChargeStatus(charge) === "Vencido").reduce((sum, charge) => sum + billingChargeOpenAmount(charge), 0),
+      lastPayment: payments[payments.length - 1]?.date || "--",
+      futureInstallments: charges.filter((charge) => billingChargeStatus(charge) === "A vencer").length,
+      overdueInstallments: charges.filter((charge) => billingChargeStatus(charge) === "Vencido").length
+    };
+  }
+
+  function renderBillingDashboard() {
+    const metrics = billingMetrics();
+    return (
+      <section className="module-content stock-wide">
+        <h2>Faturamento</h2>
+        <p className="stock-help">Visão financeira do mês, cobranças em aberto e inadimplência.</p>
+        <div className="acomp-grid">
+          <MiniDashCard title="A receber no mês" value={money(metrics.totalToReceive)} detail="Parcelas em aberto" />
+          <MiniDashCard title="Recebido" value={money(metrics.totalReceived)} detail="Pagamentos do mês" />
+          <MiniDashCard title="Vencido" value={money(metrics.totalOverdue)} detail="Em atraso" danger={metrics.totalOverdue > 0} />
+          <MiniDashCard title="Clientes inadimplentes" value={metrics.delinquentCustomers} detail="Status ou parcelas vencidas" danger={metrics.delinquentCustomers > 0} />
+          <MiniDashCard title="Vencem hoje" value={metrics.dueToday} detail="Cobranças do dia" warning={metrics.dueToday > 0} />
+          <MiniDashCard title="Próx. 7 dias" value={metrics.dueNext7} detail="A vencer em breve" warning={metrics.dueNext7 > 0} />
+        </div>
+      </section>
+    );
+  }
+
+  function renderBillingCustomers() {
+    const selectedCustomer = billingCustomerById(selectedBillingCustomerId) || billingCustomers[0];
+    const summary = selectedCustomer ? customerFinancialSummary(selectedCustomer.id) : null;
+    return (
+      <section className="module-content stock-wide">
+        <h2>Clientes de faturamento</h2>
+        <form className="stock-form-grid" onSubmit={saveBillingCustomer}>
+          <label>Nome completo<input value={billingCustomerForm.fullName} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, fullName: event.target.value })} /></label>
+          <label>CPF<input value={billingCustomerForm.cpf} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, cpf: maskCpf(event.target.value) })} placeholder="000.000.000-00" /></label>
+          <label>Data de nascimento<input type="date" value={billingCustomerForm.birthDate} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, birthDate: event.target.value })} /></label>
+          <label>Telefone/WhatsApp<input value={billingCustomerForm.phone} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, phone: event.target.value })} /></label>
+          <label>E-mail<input type="email" value={billingCustomerForm.email} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, email: event.target.value })} /></label>
+          <label>CEP<input value={billingCustomerForm.zipCode} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, zipCode: maskCep(event.target.value) })} onBlur={() => {}} placeholder="Preparado para ViaCEP" /></label>
+          <label>Endereço<input value={billingCustomerForm.address} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, address: event.target.value })} /></label>
+          <label>Número<input value={billingCustomerForm.number} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, number: event.target.value })} /></label>
+          <label>Complemento<input value={billingCustomerForm.complement} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, complement: event.target.value })} /></label>
+          <label>Bairro<input value={billingCustomerForm.district} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, district: event.target.value })} /></label>
+          <label>Cidade<input value={billingCustomerForm.city} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, city: event.target.value })} /></label>
+          <label>Estado<input value={billingCustomerForm.state} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, state: event.target.value.toUpperCase().slice(0, 2) })} /></label>
+          <label>Status<select value={billingCustomerForm.status} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, status: event.target.value })}><option>Ativo</option><option>Inativo</option><option>Inadimplente</option></select></label>
+          <label>Data de cadastro<input type="date" value={billingCustomerForm.registeredAt} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, registeredAt: event.target.value })} /></label>
+          <label className="stock-form-grid-full">Observações<textarea value={billingCustomerForm.notes} onChange={(event) => setBillingCustomerForm({ ...billingCustomerForm, notes: event.target.value })} /></label>
+          <button className="primary" type="submit">{editingBillingCustomerId ? "Salvar cliente" : "Cadastrar cliente"}</button>
+          {editingBillingCustomerId && <button className="secondary" type="button" onClick={resetBillingCustomerForm}>Cancelar edição</button>}
+        </form>
+
+        {selectedCustomer && summary && (
+          <div className="billing-history-panel">
+            <div className="access-section-heading"><div><h2>Histórico financeiro</h2><p className="stock-help">{selectedCustomer.fullName}</p></div></div>
+            <div className="workflow-summary-grid">
+              <div><span>Total comprado</span><strong>{money(summary.totalBought)}</strong></div>
+              <div><span>Total pago</span><strong>{money(summary.totalPaid)}</strong></div>
+              <div><span>Em aberto</span><strong>{money(summary.totalOpen)}</strong></div>
+              <div><span>Vencido</span><strong>{money(summary.totalOverdue)}</strong></div>
+              <div><span>Último pagamento</span><strong>{summary.lastPayment}</strong></div>
+              <div><span>Parcelas futuras</span><strong>{summary.futureInstallments}</strong></div>
+              <div><span>Parcelas vencidas</span><strong>{summary.overdueInstallments}</strong></div>
+            </div>
+          </div>
+        )}
+
+        <div className="stock-table-wrap billing-table-gap"><table><thead><tr><th>Cliente</th><th>CPF</th><th>WhatsApp</th><th>Status</th><th>Cadastro</th><th>Ações</th></tr></thead><tbody>{billingCustomers.map((customer) => (<tr key={customer.id}><td>{customer.fullName}</td><td>{customer.cpf}</td><td>{customer.phone}</td><td><span className="status-pill">{customer.status}</span></td><td>{formatDate(customer.registeredAt)}</td><td><div className="action-buttons"><button type="button" onClick={() => setSelectedBillingCustomerId(customer.id)}>Histórico</button><button type="button" onClick={() => editBillingCustomer(customer)}>Editar</button></div></td></tr>))}</tbody></table></div>
+      </section>
+    );
+  }
+
+  function renderBillingChargeForm() {
+    const total = parseMoneyValue(billingChargeForm.totalAmount);
+    const installments = billingChargeForm.chargeType === "À vista" ? 1 : Math.max(Number(billingChargeForm.installments || 1), 1);
+    const suggestedInstallment = total ? money(total / installments) : "--";
+    return (
+      <section className="module-content stock-wide">
+        <h2>Gerar cobrança</h2>
+        <form className="stock-form-grid" onSubmit={saveBillingCharge}>
+          <label>Cliente vinculado<select value={billingChargeForm.customerId} onChange={(event) => setBillingChargeForm({ ...billingChargeForm, customerId: event.target.value })}><option value="">Selecione</option>{billingCustomers.filter((customer) => customer.status !== "Inativo").map((customer) => <option key={customer.id} value={customer.id}>{customer.fullName} - {customer.cpf}</option>)}</select></label>
+          <label>Forma de pagamento<select value={billingChargeForm.paymentMethod} onChange={(event) => setBillingChargeForm({ ...billingChargeForm, paymentMethod: event.target.value })}>{["PIX", "Cartão de crédito", "Cartão de débito", "Dinheiro", "Boleto", "Transferência"].map((item) => <option key={item}>{item}</option>)}</select></label>
+          <label>Tipo de cobrança<select value={billingChargeForm.chargeType} onChange={(event) => setBillingChargeForm({ ...billingChargeForm, chargeType: event.target.value, installments: event.target.value === "À vista" ? "1" : billingChargeForm.installments })}>{["À vista", "Parcelado", "Recorrente mensal"].map((item) => <option key={item}>{item}</option>)}</select></label>
+          <label>Valor total<input value={billingChargeForm.totalAmount} onChange={(event) => setBillingChargeForm({ ...billingChargeForm, totalAmount: event.target.value })} placeholder="Ex: 1200,00" /></label>
+          <label>Quantidade de parcelas<input type="number" min="1" value={billingChargeForm.installments} disabled={billingChargeForm.chargeType === "À vista"} onChange={(event) => setBillingChargeForm({ ...billingChargeForm, installments: event.target.value })} /></label>
+          <label>Valor da parcela<input value={billingChargeForm.installmentAmount} onChange={(event) => setBillingChargeForm({ ...billingChargeForm, installmentAmount: event.target.value })} placeholder={suggestedInstallment} /></label>
+          <label>Primeiro vencimento<input type="date" value={billingChargeForm.firstDueDate} onChange={(event) => setBillingChargeForm({ ...billingChargeForm, firstDueDate: event.target.value })} /></label>
+          <label>Dia fixo de vencimento<input type="number" min="1" max="31" value={billingChargeForm.fixedDueDay} onChange={(event) => setBillingChargeForm({ ...billingChargeForm, fixedDueDay: event.target.value })} placeholder="Ex: 10" /></label>
+          <label className="stock-form-grid-full">Observação<input value={billingChargeForm.notes} onChange={(event) => setBillingChargeForm({ ...billingChargeForm, notes: event.target.value })} /></label>
+          <button className="primary" type="submit">Gerar cobrança</button>
+        </form>
+      </section>
+    );
+  }
+
+  function renderBillingCharges() {
+    const charges = filteredBillingCharges();
+    return (
+      <section className="module-content stock-wide">
+        <h2>Cobranças</h2>
+        <div className="stock-filter-grid billing-filter-grid">
+          <input value={billingFilters.customer} onChange={(event) => setBillingFilters({ ...billingFilters, customer: event.target.value })} placeholder="Cliente" />
+          <input value={billingFilters.cpf} onChange={(event) => setBillingFilters({ ...billingFilters, cpf: maskCpf(event.target.value) })} placeholder="CPF" />
+          <select value={billingFilters.status} onChange={(event) => setBillingFilters({ ...billingFilters, status: event.target.value })}>{["Todos", "A vencer", "Vence hoje", "Vencido", "Pago", "Cancelado"].map((item) => <option key={item}>{item}</option>)}</select>
+          <select value={billingFilters.paymentMethod} onChange={(event) => setBillingFilters({ ...billingFilters, paymentMethod: event.target.value })}>{["Todos", "PIX", "Cartão de crédito", "Cartão de débito", "Dinheiro", "Boleto", "Transferência"].map((item) => <option key={item}>{item}</option>)}</select>
+          <input type="date" value={billingFilters.periodStart} onChange={(event) => setBillingFilters({ ...billingFilters, periodStart: event.target.value })} />
+          <input type="date" value={billingFilters.periodEnd} onChange={(event) => setBillingFilters({ ...billingFilters, periodEnd: event.target.value })} />
+          <select value={billingFilters.view} onChange={(event) => setBillingFilters({ ...billingFilters, view: event.target.value })}>{["Todos", "Pagos", "Vencidos", "Em aberto"].map((item) => <option key={item}>{item}</option>)}</select>
+        </div>
+        <div className="stock-table-wrap"><table><thead><tr><th>Cliente</th><th>CPF</th><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Pago</th><th>Status</th><th>Pagamento</th><th>Ações</th></tr></thead><tbody>{charges.map((charge) => { const customer = billingCustomerById(charge.customerId); const status = billingChargeStatus(charge); return <tr key={charge.id}><td>{customer?.fullName || "--"}</td><td>{customer?.cpf || "--"}</td><td>{charge.installmentNumber}/{charge.totalInstallments}</td><td>{formatDate(charge.dueDate)}</td><td>{money(Number(charge.amount || 0))}</td><td>{money(billingChargePaidAmount(charge))}</td><td><span className="status-pill">{status}</span></td><td>{charge.paymentMethod}</td><td><div className="action-buttons"><button type="button" onClick={() => markBillingChargePaid(charge)}>Pagar</button><button type="button" onClick={() => registerBillingPartialPayment(charge)}>Parcial</button><button type="button" onClick={() => editBillingDueDate(charge)}>Vencimento</button><button type="button" onClick={() => addBillingObservation(charge)}>Obs.</button><button type="button" onClick={() => setSelectedBillingCharge(charge)}>Histórico</button><button type="button" onClick={() => cancelBillingCharge(charge)}>Cancelar</button></div></td></tr>; })}</tbody></table></div>
+      </section>
+    );
+  }
+
+  function renderBillingHistoryModal() {
+    if (!selectedBillingCharge) return null;
+    const customer = billingCustomerById(selectedBillingCharge.customerId);
+    return (
+      <StockModal title="Histórico da cobrança" onClose={() => setSelectedBillingCharge(null)}>
+        <div className="billing-history-modal">
+          <strong>{customer?.fullName || "Cliente"}</strong>
+          <p className="stock-help">Parcela {selectedBillingCharge.installmentNumber}/{selectedBillingCharge.totalInstallments} • {money(Number(selectedBillingCharge.amount || 0))}</p>
+          {(selectedBillingCharge.history || []).map((item, index) => (<article className="kanban-comment" key={`${item.date}-${index}`}><strong>{item.action}</strong><p>{item.note || "--"}</p><small>{item.date}</small></article>))}
+          {selectedBillingCharge.notes && <div className="pending-reason-box"><strong>Observação atual:</strong><span>{selectedBillingCharge.notes}</span></div>}
+        </div>
+      </StockModal>
+    );
+  }
+
+  function renderBillingModule() {
+    const items = [
+      { id: "dashboard", label: "Painel" },
+      { id: "clientes", label: "Clientes" },
+      { id: "gerar", label: "Gerar cobrança" },
+      { id: "cobrancas", label: "Cobranças" }
+    ];
+
+    return (
+      <OperationalModuleLayout className="billing-workspace" items={items} page={billingPage} onNavigate={setBillingPage}>
+        {billingPage === "dashboard" && renderBillingDashboard()}
+        {billingPage === "clientes" && renderBillingCustomers()}
+        {billingPage === "gerar" && renderBillingChargeForm()}
+        {billingPage === "cobrancas" && renderBillingCharges()}
+        {renderBillingHistoryModal()}
+      </OperationalModuleLayout>
+    );
+  }
   function MiniDashCard({ title, value, detail, warning = false, danger = false }) {
     return (
       <div className={danger ? "acomp-card danger-card" : warning ? "acomp-card warning" : "acomp-card"}>
@@ -3262,10 +3829,33 @@ export default function App() {
   }
 
   function renderChecklistExecucao() {
+    const visibleActivities = sortChecklistActivities(filteredChecklistActivities);
+    const progress = checklistProgressFor(visibleActivities);
+    const nextActivity = nextChecklistActivity(visibleActivities);
+    const workflowGroups = [
+      ["running", "Em andamento", "Finalize o que já começou"],
+      ["pending", "Pendências", "Retome quando o impedimento for resolvido"],
+      ["waiting", "Próximos checks", "Siga a rotina do turno"],
+      ["done", "Concluídos hoje", "Registro do que já foi feito"]
+    ];
+
     return (
       <section className="module-content checklist-wide">
-        <h2>Executar checklist</h2>
-        <p className="stock-help">Clique em iniciar quando começar e finalizar quando concluir. O sistema registra o horário do dispositivo.</p>
+        <div className="workflow-hero">
+          <div>
+            <span className="workflow-kicker">Rotina diária</span>
+            <h2>Checks do turno</h2>
+            <p className="stock-help">Fluxo simples para garçom, auxiliar de cozinha e operação: iniciar, anexar evidência quando necessário e finalizar.</p>
+          </div>
+
+          <div className="workflow-progress-card">
+            <strong>{progress.percent}%</strong>
+            <span>{progress.done} de {progress.total} concluídos</span>
+            <div className="workflow-progress-track">
+              <i style={{ width: `${progress.percent}%` }} />
+            </div>
+          </div>
+        </div>
 
         {isOperationalUser() ? (
           <div className="operational-scope-box">
@@ -3293,85 +3883,134 @@ export default function App() {
           </div>
         )}
 
+        {visibleActivities.length > 0 && (
+          <div className="workflow-summary-grid">
+            <div>
+              <span>A fazer</span>
+              <strong>{visibleActivities.filter((activity) => checklistStatusFor(activity) === "waiting").length}</strong>
+            </div>
+            <div>
+              <span>Em andamento</span>
+              <strong>{progress.running}</strong>
+            </div>
+            <div>
+              <span>Pendências</span>
+              <strong>{progress.pending}</strong>
+            </div>
+            <div>
+              <span>Próximo check</span>
+              <strong>{nextActivity ? `${nextActivity.startTime || "--"} ${nextActivity.name}` : "Tudo em dia"}</strong>
+            </div>
+          </div>
+        )}
+
         {checklistActivities.length === 0 ? (
           <div className="module-placeholder">
             <strong>Nenhuma atividade para executar</strong>
             <p>Cadastre um processo ou atividade para que ela apareça aqui.</p>
           </div>
         ) : (
-          <div className="checklist-card-list">
-            {filteredChecklistActivities.map((activity) => {
-              const running = runningChecklist[activity.id];
-              const pending = pendingChecklist[activity.id];
-              const done = completedTodayIds.has(activity.id);
+          <div className="workflow-board">
+            {workflowGroups.map(([status, title, helper]) => {
+              const groupActivities = visibleActivities.filter((activity) => checklistStatusFor(activity) === status);
+              if (status === "done" && groupActivities.length === 0) return null;
 
               return (
-                <article className={done ? "checklist-card done" : pending ? "checklist-card pending" : running ? "checklist-card running" : "checklist-card"} key={activity.id}>
-                  <div className="checklist-card-info">
-                    <strong>{activity.name}</strong>
-                    <small>{activity.type} • Área: {activity.area || "--"} • Data: {formatDate(activity.scheduledDate || today())} • Previsto: {activity.startTime || "--"} às {activity.endTime || "--"}</small>
-
-                    <div className="checklist-time-grid">
-                      <div>
-                        <span>Início real</span>
-                        <b>{running?.startedAt || pending?.realStart || "--"}</b>
-                      </div>
-                      <div>
-                        <span>Status</span>
-                        <b>{pending ? "Pendência" : running ? punctualityStatus(activity.startTime, activity.endTime, running.startedAt, currentTimeHHMM()) : done ? "Concluído hoje" : "Aguardando"}</b>
-                      </div>
-                      <div>
-                        <span>Tempo</span>
-                        <b>{running ? durationFromMinutes(Number(running.accumulatedMinutes || 0) + minutesBetween(running.startedAt, currentTimeHHMM())) : pending ? durationFromMinutes(pending.accumulatedMinutes) : "--"}</b>
-                      </div>
+                <section className={`workflow-lane ${status}`} key={status}>
+                  <header>
+                    <div>
+                      <strong>{title}</strong>
+                      <span>{helper}</span>
                     </div>
+                    <b>{groupActivities.length}</b>
+                  </header>
 
-                    {pending && (
-                      <div className="pending-reason-box">
-                        <strong>Motivo da pendência:</strong>
-                        <span>{pending.reason}</span>
-                        <small>Parado em: {pending.stoppedAtFull}</small>
-                      </div>
-                    )}
+                  {groupActivities.length === 0 ? (
+                    <div className="workflow-empty">Nada aqui agora</div>
+                  ) : (
+                    <div className="checklist-card-list">
+                      {groupActivities.map((activity) => {
+                        const running = runningChecklist[activity.id];
+                        const pending = pendingChecklist[activity.id];
+                        const done = completedTodayIds.has(activity.id);
+                        const cardClass = done ? "checklist-card done" : pending ? "checklist-card pending" : running ? "checklist-card running" : "checklist-card";
 
-                    {running && (
-                      <div className="evidence-box">
-                        <strong>Evidência da execução</strong>
-                        <p>Envie ou tire uma foto antes de finalizar esta atividade.</p>
+                        return (
+                          <article className={cardClass} key={activity.id}>
+                            <div className="checklist-card-info">
+                              <div className="workflow-card-top">
+                                <span className={`workflow-status ${checklistStatusFor(activity)}`}>{checklistStatusLabel(activity)}</span>
+                                <small>{activity.startTime || "--"} às {activity.endTime || "--"}</small>
+                              </div>
+                              <strong>{activity.name}</strong>
+                              <small>{activity.type} • Área: {activity.area || "--"} • {formatDate(activity.scheduledDate || today())}</small>
 
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          onChange={(event) => handleChecklistEvidence(activity.id, event)}
-                        />
+                              <div className="checklist-time-grid">
+                                <div>
+                                  <span>Início real</span>
+                                  <b>{running?.startedAt || pending?.realStart || "--"}</b>
+                                </div>
+                                <div>
+                                  <span>Status</span>
+                                  <b>{pending ? "Pendência" : running ? punctualityStatus(activity.startTime, activity.endTime, running.startedAt, currentTimeHHMM()) : done ? "Concluído hoje" : "Aguardando"}</b>
+                                </div>
+                                <div>
+                                  <span>Tempo</span>
+                                  <b>{running ? durationFromMinutes(Number(running.accumulatedMinutes || 0) + minutesBetween(running.startedAt, currentTimeHHMM())) : pending ? durationFromMinutes(pending.accumulatedMinutes) : "--"}</b>
+                                </div>
+                              </div>
 
-                        {checklistEvidence[activity.id]?.image && (
-                          <div className="evidence-preview">
-                            <img src={checklistEvidence[activity.id].image} alt="Evidência da atividade" />
-                            <small>{checklistEvidence[activity.id].capturedAt}</small>
-                            <button className="danger" type="button" onClick={() => removeChecklistEvidence(activity.id)}>Remover foto</button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                              {pending && (
+                                <div className="pending-reason-box">
+                                  <strong>Motivo da pendência:</strong>
+                                  <span>{pending.reason}</span>
+                                  <small>Parado em: {pending.stoppedAtFull}</small>
+                                </div>
+                              )}
 
-                  <div className="checklist-actions">
-                    {done ? (
-                      <button className="done-button" disabled>Concluído</button>
-                    ) : pending ? (
-                      <button className="primary" onClick={() => startChecklistActivity(activity)}>Retomar</button>
-                    ) : running ? (
-                      <>
-                        <button className="pending-button" onClick={() => markChecklistPending(activity)}>Pendência</button>
-                        <button className="finish-button" onClick={() => finishChecklistActivity(activity)}>Finalizar</button>
-                      </>
-                    ) : (
-                      <button className="primary" onClick={() => startChecklistActivity(activity)}>Iniciar</button>
-                    )}
-                  </div>
-                </article>
+                              {running && (
+                                <div className="evidence-box">
+                                  <strong>Evidência da execução</strong>
+                                  <p>Envie ou tire uma foto antes de finalizar esta atividade.</p>
+
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    onChange={(event) => handleChecklistEvidence(activity.id, event)}
+                                  />
+
+                                  {checklistEvidence[activity.id]?.image && (
+                                    <div className="evidence-preview">
+                                      <img src={checklistEvidence[activity.id].image} alt="Evidência da atividade" />
+                                      <small>{checklistEvidence[activity.id].capturedAt}</small>
+                                      <button className="danger" type="button" onClick={() => removeChecklistEvidence(activity.id)}>Remover foto</button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="checklist-actions">
+                              {done ? (
+                                <button className="done-button" disabled>Concluído</button>
+                              ) : pending ? (
+                                <button className="primary" onClick={() => startChecklistActivity(activity)}>Retomar</button>
+                              ) : running ? (
+                                <>
+                                  <button className="pending-button" onClick={() => markChecklistPending(activity)}>Pendência</button>
+                                  <button className="finish-button" onClick={() => finishChecklistActivity(activity)}>Finalizar</button>
+                                </>
+                              ) : (
+                                <button className="primary" onClick={() => startChecklistActivity(activity)}>Iniciar</button>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
               );
             })}
           </div>
@@ -3440,7 +4079,7 @@ export default function App() {
 
   function renderChecklistModule() {
     const items = [
-      { id: "executar", label: "Executar checklist" },
+      { id: "executar", label: "Rotina de hoje" },
       { id: "kanban", label: "Kanban" },
       ...(!isOperationalUser() ? [
         { id: "atividades", label: "Atividades" },
@@ -4630,7 +5269,7 @@ export default function App() {
                             </div>
                           </td>
                           <td>{user.role}</td>
-                          <td>{(user.allowedModules || ["checklist", "acesso"]).map((moduleId) => SOLUTION_MODULES.find((module) => module.id === moduleId)?.title).filter(Boolean).join(", ")}</td>
+                          <td>{(user.allowedModules || ["checklist", "faturamento", "acesso"]).map((moduleId) => SOLUTION_MODULES.find((module) => module.id === moduleId)?.title).filter(Boolean).join(", ")}</td>
                           <td>{user.telegramEnabled ? "Ativo" : "Não"}</td>
                           <td>{user.status}</td>
                           <td>
@@ -4732,7 +5371,7 @@ export default function App() {
     return renderQrActionPage();
   }
 
-  if (["acompanhamento", "estoque", "etiquetas", "checklist", "acesso"].includes(page)) {
+  if (["acompanhamento", "estoque", "etiquetas", "checklist", "faturamento", "acesso"].includes(page)) {
     const moduleInfo = MODULE_INFO[page];
 
     return (
@@ -4741,6 +5380,7 @@ export default function App() {
         {page === "checklist" && renderChecklistModule()}
         {page === "etiquetas" && renderEtiquetasModule()}
         {page === "acompanhamento" && renderClientDashboard()}
+        {page === "faturamento" && renderBillingModule()}
         {page === "acesso" && renderAccessModule()}
       </ModuleShell>
     );
@@ -4805,3 +5445,14 @@ export default function App() {
     </AppShell>
   );
 }
+
+
+
+
+
+
+
+
+
+
+

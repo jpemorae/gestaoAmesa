@@ -1,4 +1,4 @@
-import { apiFetch, isApiConfigured, persistApiSessionToken } from "./api";
+﻿import { apiFetch, isApiConfigured, persistApiSessionToken } from "./api";
 
 export function canUseAppDataApi() {
   return isApiConfigured();
@@ -47,6 +47,19 @@ export async function saveClientStockCatalog(clientId, payload) {
   });
 }
 
+
+export async function loadClientBillingData(clientId) {
+  if (!canUseAppDataApi() || !clientId) return null;
+  return apiFetch(`/app-data/clients/${clientId}/billing`);
+}
+
+export async function saveClientBillingData(clientId, payload) {
+  if (!canUseAppDataApi() || !clientId) return null;
+  return apiFetch(`/app-data/clients/${clientId}/billing`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
 export async function saveAppUser(payload) {
   if (!canUseAppDataApi()) return null;
   const method = payload.id ? "PUT" : "POST";
@@ -61,3 +74,4 @@ export async function removeAppUser(id) {
   if (!canUseAppDataApi()) return null;
   return apiFetch(`/app-data/users/${id}`, { method: "DELETE" });
 }
+

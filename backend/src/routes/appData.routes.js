@@ -1,13 +1,15 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import {
   appLogin,
   appDataDiagnostics,
   deleteAppClient,
   deleteAppUser,
   getClientStockCatalog,
+  getClientBillingData,
   listAppData,
   updateAppClient,
   updateClientStockCatalog,
+  updateClientBillingData,
   updateAppUser,
   upsertAppClient,
   upsertAppUser
@@ -26,8 +28,11 @@ router.put("/clients/:id", updateAppClient);
 router.delete("/clients/:id", deleteAppClient);
 router.get("/clients/:id/stock-catalog", getClientStockCatalog);
 router.put("/clients/:id/stock-catalog", updateClientStockCatalog);
+router.get("/clients/:id/billing", getClientBillingData);
+router.put("/clients/:id/billing", updateClientBillingData);
 router.post("/users", upsertAppUser);
 router.put("/users/:id", updateAppUser);
 router.delete("/users/:id", deleteAppUser);
 
 export default router;
+

@@ -1,4 +1,4 @@
-import crypto from "crypto";
+﻿import crypto from "crypto";
 import { supabaseAdmin } from "../config/supabase.js";
 import { createAppDataToken } from "../middleware/appDataAuth.js";
 
@@ -226,7 +226,7 @@ export async function appLogin(req, res) {
     });
   }
   if (!user || !verifyPassword(password, user)) {
-    return res.status(401).json({ error: "Usuário ou senha inválidos." });
+    return res.status(401).json({ error: "UsuÃ¡rio ou senha invÃ¡lidos." });
   }
 
   if (user.user_type === "client") {
@@ -236,7 +236,7 @@ export async function appLogin(req, res) {
       .eq("id", user.company_id)
       .eq("status", "Ativo")
       .maybeSingle();
-    if (!client) return res.status(401).json({ error: "Cliente inativo ou não encontrado." });
+    if (!client) return res.status(401).json({ error: "Cliente inativo ou nÃ£o encontrado." });
   }
 
   const responseUser = userFromRow(user);
@@ -318,7 +318,7 @@ export async function upsertAppUser(req, res) {
   }
 
   if (!payload.password_hash) {
-    return res.status(400).json({ error: "Senha obrigatória para novo usuário." });
+    return res.status(400).json({ error: "Senha obrigatÃ³ria para novo usuÃ¡rio." });
   }
 
   const { data, error } = await supabaseAdmin
@@ -347,7 +347,7 @@ export async function updateAppUser(req, res) {
 
   const payload = userPayload({ ...body, id: req.params.id }, existing);
   if (!payload.password_hash) {
-    if (!existing) return res.status(400).json({ error: "Senha obrigatória para novo usuário." });
+    if (!existing) return res.status(400).json({ error: "Senha obrigatÃ³ria para novo usuÃ¡rio." });
     payload.password_hash = existing.password_hash;
     payload.password_salt = existing.password_salt;
   }
@@ -396,7 +396,7 @@ export async function getClientStockCatalog(req, res) {
     .maybeSingle();
 
   if (error) return res.status(400).json({ error: error.message });
-  if (!data) return res.status(404).json({ error: "Cliente não encontrado." });
+  if (!data) return res.status(404).json({ error: "Cliente nÃ£o encontrado." });
 
   const catalog = data.payload?.stockCatalog || {};
   return res.json({
@@ -417,7 +417,7 @@ export async function updateClientStockCatalog(req, res) {
     .maybeSingle();
 
   if (currentError) return res.status(400).json({ error: currentError.message });
-  if (!current) return res.status(404).json({ error: "Cliente não encontrado." });
+  if (!current) return res.status(404).json({ error: "Cliente nÃ£o encontrado." });
 
   const stockCatalog = {
     categories: Array.isArray(req.body.categories) ? req.body.categories : [],
@@ -440,4 +440,58 @@ export async function updateClientStockCatalog(req, res) {
 
   if (error) return res.status(400).json({ error: error.message });
   return res.json(data.payload.stockCatalog);
+}
+
+export async function getClientBillingData(req, res) {
+  if (!requireCompanyAccess(req, res, req.params.id)) return;
+
+  const { data, error } = await supabaseAdmin
+    .from("app_clients")
+    .select("payload")
+    .eq("id", req.params.id)
+    .maybeSingle();
+
+  if (error) return res.status(400).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: "Cliente nao encontrado." });
+
+  const billing = data.payload?.billingData || {};
+  return res.json({
+    customers: Array.isArray(billing.customers) ? billing.customers : [],
+    charges: Array.isArray(billing.charges) ? billing.charges : [],
+    updatedAt: billing.updatedAt || null
+  });
+}
+
+export async function updateClientBillingData(req, res) {
+  if (!requireCompanyAccess(req, res, req.params.id)) return;
+
+  const { data: current, error: currentError } = await supabaseAdmin
+    .from("app_clients")
+    .select("payload")
+    .eq("id", req.params.id)
+    .maybeSingle();
+
+  if (currentError) return res.status(400).json({ error: currentError.message });
+  if (!current) return res.status(404).json({ error: "Cliente nao encontrado." });
+
+  const billingData = {
+    customers: Array.isArray(req.body.customers) ? req.body.customers : [],
+    charges: Array.isArray(req.body.charges) ? req.body.charges : [],
+    updatedAt: new Date().toISOString()
+  };
+
+  const payload = {
+    ...(current.payload || {}),
+    billingData
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from("app_clients")
+    .update({ payload, updated_at: new Date().toISOString() })
+    .eq("id", req.params.id)
+    .select("payload")
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  return res.json(data.payload.billingData);
 }

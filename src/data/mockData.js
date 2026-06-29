@@ -30,6 +30,11 @@ export const SOLUTION_MODULES = [
     description: "Rotinas, início, fim e histórico operacional."
   },
   {
+    id: "faturamento",
+    title: "Faturamento",
+    icon: "$",
+    description: "Clientes, cobrancas e controle de pagamentos."
+  },  {
     id: "acesso",
     title: "Cadastros",
     icon: "⚙️",
@@ -50,7 +55,7 @@ export const initialClients = [
     monthlyFee: 200,
     dueDay: "10",
     logo: "",
-    enabledModules: ["acompanhamento", "estoque", "checklist", "etiquetas", "acesso"],
+    enabledModules: ["acompanhamento", "estoque", "checklist", "faturamento", "etiquetas", "acesso"],
     financialStatus: "Em dia",
     themeColor: "#0b2f4f",
     status: "Ativo",
@@ -82,3 +87,4 @@ export const initialUsers = [
     createdAt: "Inicial"
   }
 ];
+
