@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { initialClients, initialUsers, SOLUTION_MODULES } from "./data/mockData";
 import { MODULE_INFO } from "./data/moduleInfo";
 import { AppShell } from "./layout/AppShell";
@@ -94,6 +94,7 @@ export default function App() {
     setIsLogged(false);
     setPage("dashboard");
   }
+
 
   useEffect(() => {
     const session = restoreSession();
@@ -543,11 +544,14 @@ export default function App() {
   const [editingBillingCustomerId, setEditingBillingCustomerId] = useState(null);
   const [billingChargeForm, setBillingChargeForm] = useState(emptyBillingChargeForm);
   const [billingFilters, setBillingFilters] = useState({ customer: "", cpf: "", status: "Todos", paymentMethod: "Todos", periodStart: "", periodEnd: "", view: "Todos" });
+  const [showBillingAdvancedFilters, setShowBillingAdvancedFilters] = useState(false);
   const [selectedBillingCustomerId, setSelectedBillingCustomerId] = useState("");
   const [selectedBillingCharge, setSelectedBillingCharge] = useState(null);
   const [openBillingActionId, setOpenBillingActionId] = useState("");
+  const [openSaleActionId, setOpenSaleActionId] = useState("");
 
   const emptySaleForm = {
+    saleKind: "Venda",
     saleType: "Avulsa",
     customerId: "",
     customerSearch: "",
@@ -569,6 +573,24 @@ export default function App() {
   const [saleItems, setSaleItems] = useState([{ menuItemId: "", quantity: 1, unitPrice: 0, discount: 0 }]);
   const [salesFilters, setSalesFilters] = useState({ periodStart: "", periodEnd: "", customer: "", saleType: "Todos", paymentMethod: "Todos", status: "Todos", item: "" });
   const [selectedSale, setSelectedSale] = useState(null);
+  useEffect(() => {
+    function closeOpenActionMenus(event) {
+      if (event.type === "keydown" && event.key !== "Escape") return;
+      if (event.type === "mousedown" && event.target.closest(".table-action-menu")) return;
+      if (event.type === "mousedown" && event.target.closest(".billing-filter-menu")) return;
+      setOpenRegisteredActionId("");
+      setOpenBillingActionId("");
+      setOpenSaleActionId("");
+      setShowBillingAdvancedFilters(false);
+    }
+
+    document.addEventListener("mousedown", closeOpenActionMenus);
+    document.addEventListener("keydown", closeOpenActionMenus);
+    return () => {
+      document.removeEventListener("mousedown", closeOpenActionMenus);
+      document.removeEventListener("keydown", closeOpenActionMenus);
+    };
+  }, []);
 
   useEffect(() => {
     const migrationKey = "gestao_mesa_migration_dashboard_module_v1";
@@ -3643,6 +3665,7 @@ export default function App() {
   }
 
   function saleStatus(sale) {
+    if (sale.status === "Orçamento") return "Orçamento";
     if (sale.status === "Aberta") return "Aberta";
     if (sale.status === "Cancelada") return "Cancelada";
     if (sale.status === "Paga") return "Paga";
@@ -3754,6 +3777,7 @@ export default function App() {
       || saleForm.buyerName.trim()
       || saleForm.buyerPhone.trim()
       || saleForm.notes.trim()
+      || saleForm.saleKind !== "Venda"
       || saleForm.saleModel !== "À vista"
       || saleForm.paymentMethod !== "PIX"
       || saleForm.paymentDate !== today()
@@ -3774,6 +3798,7 @@ export default function App() {
       setEditingSaleId(sale.id);
       setSaleForm({
         ...emptySaleForm,
+        saleKind: sale.saleKind || (sale.status === "Orçamento" ? "Orçamento" : "Venda"),
         saleType: sale.saleType || "Avulsa",
         customerId: sale.customerId || "",
         customerSearch: sale.customerName || sale.buyerName || "",
@@ -3820,7 +3845,7 @@ export default function App() {
       });
 
     if (items.some((item) => !activeMenuIds.has(item.menuItemId))) return { error: "Apenas itens ativos do Menu podem ser vendidos." };
-    if (finalize && !items.length) return { error: "Adicione ao menos um item ativo do menu." };
+    if ((finalize || saleForm.saleKind === "Orçamento") && !items.length) return { error: "Adicione ao menos um item ativo do menu." };
     if (saleForm.saleType === "Cliente" && finalize && !saleForm.customerId) return { error: "Selecione o cliente cadastrado." };
     if (saleForm.saleType === "Avulsa" && saleForm.saleModel !== "À vista") return { error: "Venda avulsa só pode ser à vista." };
     if (saleForm.saleModel === "Parcelada" && saleForm.saleType !== "Cliente") return { error: "Venda parcelada exige cliente cadastrado." };
@@ -3829,13 +3854,15 @@ export default function App() {
     const existingSale = salesRecords.find((sale) => sale.id === editingSaleId);
     const totals = saleTotals(items);
     const customer = saleCustomerById(saleForm.customerId);
-    const paidNow = finalize && saleForm.saleModel === "À vista" && saleForm.paymentStatus === "Pago";
+    const isQuote = saleForm.saleKind === "Orçamento";
+    const paidNow = finalize && !isQuote && saleForm.saleModel === "À vista" && saleForm.paymentStatus === "Pago";
     const sale = {
       id: editingSaleId || crypto.randomUUID(),
       code: existingSale?.code || `VEN-${Date.now().toString().slice(-6)}`,
       saleDate: existingSale?.saleDate || today(),
       createdAt: existingSale?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      saleKind: isQuote ? "Orçamento" : "Venda",
       saleType: saleForm.saleType === "Cliente" ? "Cliente" : "Avulsa",
       customerId: saleForm.saleType === "Cliente" ? saleForm.customerId : "",
       customerName: customer?.fullName || "",
@@ -3855,11 +3882,11 @@ export default function App() {
       totalDiscount: totals.discount,
       totalFinal: totals.final,
       paidAmount: paidNow ? totals.final : Number(existingSale?.paidAmount || 0),
-      status: finalize ? (paidNow ? "Paga" : "Finalizada") : "Aberta",
+      status: isQuote ? "Orçamento" : finalize ? (paidNow ? "Paga" : "Finalizada") : "Aberta",
       notes: saleForm.notes || "",
       history: [
         ...(existingSale?.history || []),
-        { action: finalize ? "Venda finalizada" : "Venda salva como rascunho", note: paidNow ? "Pagamento confirmado" : "", date: new Date().toLocaleString("pt-BR") }
+        { action: isQuote ? "Orçamento salvo" : finalize ? "Venda finalizada" : "Venda salva como rascunho", note: paidNow ? "Pagamento confirmado" : "", date: new Date().toLocaleString("pt-BR") }
       ]
     };
 
@@ -3870,7 +3897,7 @@ export default function App() {
     const nextSales = editingSaleId
       ? salesRecords.map((current) => current.id === editingSaleId ? sale : current)
       : [sale, ...salesRecords];
-    const generatedCharges = finalize ? buildSaleBillingCharges(sale, totals) : [];
+    const generatedCharges = finalize && sale.status !== "Orçamento" ? buildSaleBillingCharges(sale, totals) : [];
     const nextCharges = generatedCharges.length ? [...generatedCharges, ...billingCharges.filter((charge) => charge.saleId !== sale.id)] : billingCharges;
     setSalesRecords(nextSales);
     setBillingCharges(nextCharges);
@@ -3927,6 +3954,12 @@ export default function App() {
     } : charge);
     setBillingCharges(nextCharges);
     persistBillingData(billingCustomers, nextCharges, { silent: true });
+  }
+
+
+  function convertQuoteToSale(sale) {
+    setOpenSaleActionId("");
+    openSaleModal({ ...sale, saleKind: "Venda", status: "Aberta" });
   }
 
   function filteredSalesRecords() {
@@ -4355,14 +4388,21 @@ export default function App() {
     return (
       <section className="module-content stock-wide billing-charges-panel">
         <h2>Cobranças</h2>
-        <div className="stock-filter-grid billing-filter-grid billing-filter-compact">
+        <div className="billing-filter-bar">
           <input value={billingFilters.customer} onChange={(event) => setBillingFilters({ ...billingFilters, customer: event.target.value })} placeholder="Cliente" />
           <input value={billingFilters.cpf} onChange={(event) => setBillingFilters({ ...billingFilters, cpf: maskCpf(event.target.value) })} placeholder="CPF" />
-          <select value={billingFilters.status} onChange={(event) => setBillingFilters({ ...billingFilters, status: event.target.value })}>{["Todos", "A vencer", "Vence hoje", "Vencido", "Pago", "Cancelado"].map((item) => <option key={item}>{item}</option>)}</select>
-          <select value={billingFilters.paymentMethod} onChange={(event) => setBillingFilters({ ...billingFilters, paymentMethod: event.target.value })}>{["Todos", "PIX", "Cartão de crédito", "Cartão de débito", "Dinheiro", "Boleto", "Transferência"].map((item) => <option key={item}>{item}</option>)}</select>
-          <input type="date" value={billingFilters.periodStart} onChange={(event) => setBillingFilters({ ...billingFilters, periodStart: event.target.value })} />
-          <input type="date" value={billingFilters.periodEnd} onChange={(event) => setBillingFilters({ ...billingFilters, periodEnd: event.target.value })} />
-          <select value={billingFilters.view} onChange={(event) => setBillingFilters({ ...billingFilters, view: event.target.value })}>{["Todos", "Pagos", "Vencidos", "Em aberto"].map((item) => <option key={item}>{item}</option>)}</select>
+          <div className="billing-filter-menu">
+            <button className="secondary billing-filter-trigger" type="button" onClick={() => setShowBillingAdvancedFilters(!showBillingAdvancedFilters)}>☰ Filtros</button>
+            {showBillingAdvancedFilters && (
+              <div className="billing-filter-popover">
+                <label>Status<select value={billingFilters.status} onChange={(event) => setBillingFilters({ ...billingFilters, status: event.target.value })}>{["Todos", "A vencer", "Vence hoje", "Vencido", "Pago", "Cancelado"].map((item) => <option key={item}>{item}</option>)}</select></label>
+                <label>Pagamento<select value={billingFilters.paymentMethod} onChange={(event) => setBillingFilters({ ...billingFilters, paymentMethod: event.target.value })}>{["Todos", "PIX", "Cartão de crédito", "Cartão de débito", "Dinheiro", "Boleto", "Transferência"].map((item) => <option key={item}>{item}</option>)}</select></label>
+                <label>Vencimento inicial<input type="date" value={billingFilters.periodStart} onChange={(event) => setBillingFilters({ ...billingFilters, periodStart: event.target.value })} /></label>
+                <label>Vencimento final<input type="date" value={billingFilters.periodEnd} onChange={(event) => setBillingFilters({ ...billingFilters, periodEnd: event.target.value })} /></label>
+                <label>Visão<select value={billingFilters.view} onChange={(event) => setBillingFilters({ ...billingFilters, view: event.target.value })}>{["Todos", "Pagos", "Vencidos", "Em aberto"].map((item) => <option key={item}>{item}</option>)}</select></label>
+              </div>
+            )}
+          </div>
         </div>
         <div className="stock-table-wrap billing-table-card">
           <table className="billing-prototype-table">
@@ -4469,6 +4509,7 @@ export default function App() {
         <div className="sales-modal-scroll">
           <p className="stock-help stock-modal-help">Registre a venda sem sair da listagem. Use apenas itens ativos do cadastro de Menu.</p>
           <form className="stock-form-grid stock-modal-form sale-modal-form" onSubmit={(event) => event.preventDefault()}>
+            <label>Tipo de registro<select value={saleForm.saleKind} onChange={(event) => updateSaleForm("saleKind", event.target.value)}><option>Venda</option><option>Orçamento</option></select></label>
             <label>Tipo de venda<select value={saleForm.saleType} onChange={(event) => updateSaleForm("saleType", event.target.value)}><option>Avulsa</option><option>Cliente</option></select></label>
             <label>Modelo da venda<select value={saleForm.saleModel} disabled={!canInstallment} onChange={(event) => updateSaleForm("saleModel", event.target.value)}><option>À vista</option><option>Parcelada</option></select></label>
             {saleForm.saleType === "Cliente" ? renderSaleCustomerPicker() : (<><label>Nome do comprador<input value={saleForm.buyerName} onChange={(event) => updateSaleForm("buyerName", event.target.value)} placeholder="Opcional" /></label><label>Telefone<input value={saleForm.buyerPhone} onChange={(event) => updateSaleForm("buyerPhone", event.target.value)} placeholder="Opcional" /></label></>)}
@@ -4482,7 +4523,7 @@ export default function App() {
             {saleForm.saleModel === "Parcelada" && <label>Dia fixo de vencimento<input type="number" min="1" max="31" value={saleForm.fixedDueDay} onChange={(event) => updateSaleForm("fixedDueDay", event.target.value)} placeholder="Opcional" /></label>}
             <label className="stock-form-grid-full">Observação<input value={saleForm.notes} onChange={(event) => updateSaleForm("notes", event.target.value)} placeholder="Observação da venda" /></label>
             <div className="sale-total-panel stock-form-grid-full"><span>Bruto <strong>{money(totals.gross)}</strong></span><span>Desconto <strong>{money(totals.discount)}</strong></span><span>Total final <strong>{money(totals.final)}</strong></span>{saleForm.saleModel === "Parcelada" && <span>Parcela <strong>{money(totals.final / Math.max(Number(saleForm.installments || 1), 1))}</strong></span>}</div>
-            <div className="stock-modal-footer sale-modal-footer"><button className="secondary" type="button" onClick={closeSaleModal}>Cancelar</button><button className="secondary" type="button" onClick={saveSaleDraft}>Salvar venda</button><button className="primary" type="button" onClick={finalizeSale}>Finalizar venda</button></div>
+            <div className="stock-modal-footer sale-modal-footer"><button className="secondary" type="button" onClick={closeSaleModal}>Cancelar</button><button className="secondary" type="button" onClick={saveSaleDraft}>{saleForm.saleKind === "Orçamento" ? "Salvar orçamento" : "Salvar venda"}</button><button className="primary" type="button" onClick={finalizeSale}>{saleForm.saleKind === "Orçamento" ? "Salvar pré-venda" : "Finalizar venda"}</button></div>
           </form>
         </div>
       </StockModal>
@@ -4491,22 +4532,58 @@ export default function App() {
   function renderSalesList() {
     const sales = filteredSalesRecords();
     return (
-      <section className="module-content stock-wide sales-workspace">
-        <div className="stock-title-row"><div><h2>Vendas realizadas</h2><p className="stock-help">Acompanhe vendas, rascunhos, pagamentos e parcelas vinculadas ao faturamento.</p></div><button className="primary" type="button" onClick={() => openSaleModal()}>Nova Venda</button></div>
-        <div className="stock-filter-grid sales-filter-grid">
+      <section className="module-content stock-wide sales-workspace sales-panel-card">
+        <div className="stock-title-row sales-title-row">
+          <div><h2>Vendas realizadas</h2><p className="stock-help">Acompanhe vendas, pré-vendas, pagamentos e parcelas vinculadas ao faturamento.</p></div>
+          <button className="primary" type="button" onClick={() => openSaleModal()}>Nova Venda</button>
+        </div>
+        <div className="sales-filter-bar">
           <input type="date" value={salesFilters.periodStart} onChange={(event) => setSalesFilters({ ...salesFilters, periodStart: event.target.value })} />
           <input type="date" value={salesFilters.periodEnd} onChange={(event) => setSalesFilters({ ...salesFilters, periodEnd: event.target.value })} />
           <input value={salesFilters.customer} onChange={(event) => setSalesFilters({ ...salesFilters, customer: event.target.value })} placeholder="Cliente, CPF ou telefone" />
           <select value={salesFilters.saleType} onChange={(event) => setSalesFilters({ ...salesFilters, saleType: event.target.value })}>{["Todos", "Avulsa", "Cliente"].map((item) => <option key={item}>{item}</option>)}</select>
           <select value={salesFilters.paymentMethod} onChange={(event) => setSalesFilters({ ...salesFilters, paymentMethod: event.target.value })}>{["Todos", "PIX", "Dinheiro", "Cartão de débito", "Cartão de crédito", "Transferência", "Boleto"].map((item) => <option key={item}>{item}</option>)}</select>
-          <select value={salesFilters.status} onChange={(event) => setSalesFilters({ ...salesFilters, status: event.target.value })}>{["Todos", "Aberta", "Finalizada", "Cancelada", "Paga", "Parcialmente paga", "Em atraso"].map((item) => <option key={item}>{item}</option>)}</select>
+          <select value={salesFilters.status} onChange={(event) => setSalesFilters({ ...salesFilters, status: event.target.value })}>{["Todos", "Orçamento", "Aberta", "Finalizada", "Cancelada", "Paga", "Parcialmente paga", "Em atraso"].map((item) => <option key={item}>{item}</option>)}</select>
           <input value={salesFilters.item} onChange={(event) => setSalesFilters({ ...salesFilters, item: event.target.value })} placeholder="Item vendido" />
         </div>
-        <div className="stock-table-wrap"><table><thead><tr><th>Data</th><th>Cliente/comprador</th><th>Tipo</th><th>Itens</th><th>Total</th><th>Pagamento</th><th>Status</th><th>Ações</th></tr></thead><tbody>{sales.map((sale) => { const status = saleStatus(sale); return <tr key={sale.id}><td>{formatDate(sale.saleDate)}</td><td>{saleBuyerName(sale)}</td><td>{sale.saleType}</td><td>{(sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", ")}</td><td>{money(Number(sale.totalFinal || 0))}</td><td>{sale.paymentMethod}</td><td><span className="status-pill">{status}</span></td><td><div className="action-buttons">{status === "Aberta" && <button type="button" onClick={() => openSaleModal(sale)}>Editar</button>}<button type="button" onClick={() => setSelectedSale(sale)}>Detalhes</button><button type="button" onClick={() => markSalePaid(sale)}>Pagar</button><button type="button" onClick={() => setSelectedSale({ ...sale, showInstallments: true })}>Parcelas</button><button type="button" onClick={() => window.print()}>Imprimir</button><a className="button-link" href={saleWhatsappUrl(sale)} target="_blank" rel="noreferrer">WhatsApp</a><button type="button" onClick={() => cancelSale(sale)}>Cancelar</button></div></td></tr>; })}</tbody></table></div>
+        <div className="stock-table-wrap sales-table-card">
+          <table className="billing-prototype-table sales-prototype-table">
+            <thead><tr><th>Data</th><th>Cliente/comprador</th><th>Tipo</th><th>Itens</th><th>Total</th><th>Pagamento</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody>
+              {sales.map((sale) => { const status = saleStatus(sale); return (
+                <tr key={sale.id}>
+                  <td>{formatDate(sale.saleDate)}</td>
+                  <td>{saleBuyerName(sale)}</td>
+                  <td>{sale.status === "Orçamento" ? "Pré-venda" : sale.saleType}</td>
+                  <td>{(sale.items || []).map((item) => <span className="sales-item-line" key={sale.id + "-" + item.menuItemId}>{item.quantity}x {item.name}</span>)}</td>
+                  <td>{money(Number(sale.totalFinal || 0))}</td>
+                  <td>{sale.paymentMethod}</td>
+                  <td><span className={"billing-status-pill " + billingGroupStatusClass(status)}>{status}</span></td>
+                  <td>
+                    <div className="table-action-menu billing-action-menu">
+                      <button type="button" className="billing-gear-button" aria-label="Abrir ações da venda" onClick={() => setOpenSaleActionId(openSaleActionId === sale.id ? "" : sale.id)}>⚙</button>
+                      {openSaleActionId === sale.id && (
+                        <div className="table-action-menu-list billing-action-list">
+                          {status === "Orçamento" && <button type="button" onClick={() => convertQuoteToSale(sale)}>Virar venda</button>}
+                          {status === "Aberta" && <button type="button" onClick={() => { setOpenSaleActionId(""); openSaleModal(sale); }}>Editar</button>}
+                          <button type="button" onClick={() => { setOpenSaleActionId(""); setSelectedSale(sale); }}>Detalhes</button>
+                          {status !== "Orçamento" && <button type="button" onClick={() => { setOpenSaleActionId(""); markSalePaid(sale); }}>Marcar como paga</button>}
+                          {status !== "Orçamento" && <button type="button" onClick={() => { setOpenSaleActionId(""); setSelectedSale({ ...sale, showInstallments: true }); }}>Parcelas</button>}
+                          <button type="button" onClick={() => { setOpenSaleActionId(""); window.print(); }}>Imprimir</button>
+                          <a className="button-link menu-link" href={saleWhatsappUrl(sale)} target="_blank" rel="noreferrer">WhatsApp</a>
+                          <button type="button" className="danger-action" onClick={() => { setOpenSaleActionId(""); cancelSale(sale); }}>Cancelar</button>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ); })}
+            </tbody>
+          </table>
+        </div>
       </section>
     );
   }
-
   function renderSaleDetailsModal() {
     if (!selectedSale) return null;
     const installments = saleInstallments(selectedSale.id);
@@ -6303,4 +6380,3 @@ export default function App() {
     </AppShell>
   );
 }
-
