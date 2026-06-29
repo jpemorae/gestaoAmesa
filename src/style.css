@@ -3846,3 +3846,127 @@ td {
     padding: 14px;
   }
 }
+
+.billing-charges-panel {
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(11, 47, 79, 0.08);
+}
+
+.billing-filter-compact {
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.billing-filter-compact input,
+.billing-filter-compact select {
+  min-height: 32px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.billing-table-card {
+  border-radius: 5px;
+  overflow: visible;
+}
+
+.billing-prototype-table {
+  min-width: 980px;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.billing-prototype-table thead th {
+  background: #1c293d;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 12px;
+  text-align: left;
+}
+
+.billing-prototype-table thead th:first-child {
+  border-radius: 5px 0 0 0;
+}
+
+.billing-prototype-table thead th:last-child {
+  border-radius: 0 5px 0 0;
+  text-align: center;
+}
+
+.billing-prototype-table tbody td {
+  border-bottom: 1px solid #edf1f5;
+  color: #001f3f;
+  font-size: 12px;
+  padding: 14px 12px;
+  vertical-align: middle;
+}
+
+.billing-prototype-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.billing-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.billing-status-pago {
+  background: #bff5d8;
+  color: #067647;
+}
+
+.billing-status-cancelado {
+  background: #ffd6d6;
+  color: #c43232;
+}
+
+.billing-status-pendente,
+.billing-status-a-vencer,
+.billing-status-vence-hoje {
+  background: #fff0b8;
+  color: #8a5b00;
+}
+
+.billing-status-parcial {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.billing-status-vencido {
+  background: #fee2e2;
+  color: #b42318;
+}
+
+.billing-gear-button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.billing-gear-button:hover {
+  background: #eef2f7;
+  color: #1c293d;
+}
+
+.billing-action-menu {
+  display: flex;
+  justify-content: center;
+}
+
+.billing-action-list {
+  min-width: 190px;
+  z-index: 35;
+}

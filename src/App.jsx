@@ -545,6 +545,7 @@ export default function App() {
   const [billingFilters, setBillingFilters] = useState({ customer: "", cpf: "", status: "Todos", paymentMethod: "Todos", periodStart: "", periodEnd: "", view: "Todos" });
   const [selectedBillingCustomerId, setSelectedBillingCustomerId] = useState("");
   const [selectedBillingCharge, setSelectedBillingCharge] = useState(null);
+  const [openBillingActionId, setOpenBillingActionId] = useState("");
 
   const emptySaleForm = {
     saleType: "Avulsa",
@@ -4154,6 +4155,82 @@ export default function App() {
     };
   }
 
+  function billingChargeGroupKey(charge) {
+    return charge.parentChargeId || charge.saleId || `${charge.customerId}-${charge.chargeType}-${charge.paymentMethod}-${charge.totalAmount || charge.amount}-${charge.createdAt || charge.dueDate}`;
+  }
+
+  function billingGroupCharges(charges) {
+    const groups = new Map();
+    charges.forEach((charge) => {
+      const key = billingChargeGroupKey(charge);
+      const current = groups.get(key) || [];
+      current.push(charge);
+      groups.set(key, current);
+    });
+    return Array.from(groups.entries()).map(([id, groupCharges]) => {
+      const sorted = [...groupCharges].sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)) || Number(a.installmentNumber || 0) - Number(b.installmentNumber || 0));
+      const first = sorted[0];
+      const customer = billingCustomerById(first.customerId);
+      const statuses = sorted.map((charge) => billingChargeStatus(charge));
+      const openCharge = sorted.find((charge) => !["Pago", "Cancelado"].includes(billingChargeStatus(charge))) || sorted[0];
+      const totalAmount = sorted.reduce((sum, charge) => sum + Number(charge.amount || 0), 0);
+      const paidAmount = sorted.reduce((sum, charge) => sum + billingChargePaidAmount(charge), 0);
+      const status = statuses.every((item) => item === "Cancelado") ? "Cancelado"
+        : statuses.every((item) => item === "Pago") ? "Pago"
+          : statuses.includes("Vencido") ? "Vencido"
+            : statuses.includes("Vence hoje") ? "Vence hoje"
+              : paidAmount > 0 ? "Parcial" : "Pendente";
+      return {
+        id,
+        customer,
+        charges: sorted,
+        primaryCharge: openCharge,
+        firstCharge: first,
+        installmentText: sorted.length > 1 ? `1/${sorted.length}` : `${first.installmentNumber || 1}/${first.totalInstallments || 1}`,
+        dueDate: openCharge?.dueDate || first.dueDate,
+        totalAmount,
+        paidAmount,
+        status,
+        paymentMethod: first.paymentMethod
+      };
+    });
+  }
+
+  function filteredBillingChargeGroups() {
+    return billingGroupCharges(filteredBillingCharges());
+  }
+
+  function updateBillingChargeGroup(group, updater) {
+    const groupIds = new Set(group.charges.map((charge) => charge.id));
+    const nextCharges = billingCharges.map((charge) => groupIds.has(charge.id) ? updater(charge) : charge);
+    setBillingCharges(nextCharges);
+    persistBillingData(billingCustomers, nextCharges, { silent: true });
+  }
+
+  function markBillingGroupPaid(group) {
+    updateBillingChargeGroup(group, (current) => ({
+      ...current,
+      paidAmount: Number(current.amount || 0),
+      status: "Pago",
+      paidAt: today(),
+      history: addBillingHistory(current, "Pagamento integral", "Cobrança consolidada")
+    }));
+    setOpenBillingActionId("");
+  }
+
+  function cancelBillingGroup(group) {
+    if (!confirm("Deseja cancelar esta cobrança?")) return;
+    updateBillingChargeGroup(group, (current) => ({
+      ...current,
+      status: "Cancelado",
+      history: addBillingHistory(current, "Cobrança cancelada", "Cobrança consolidada")
+    }));
+    setOpenBillingActionId("");
+  }
+
+  function billingGroupStatusClass(status) {
+    return `billing-status-${status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-")}`;
+  }
   function filteredBillingCharges() {
     return billingCharges.filter((charge) => {
       const customer = billingCustomerById(charge.customerId);
@@ -4274,11 +4351,11 @@ export default function App() {
   }
 
   function renderBillingCharges() {
-    const charges = filteredBillingCharges();
+    const chargeGroups = filteredBillingChargeGroups();
     return (
-      <section className="module-content stock-wide">
+      <section className="module-content stock-wide billing-charges-panel">
         <h2>Cobranças</h2>
-        <div className="stock-filter-grid billing-filter-grid">
+        <div className="stock-filter-grid billing-filter-grid billing-filter-compact">
           <input value={billingFilters.customer} onChange={(event) => setBillingFilters({ ...billingFilters, customer: event.target.value })} placeholder="Cliente" />
           <input value={billingFilters.cpf} onChange={(event) => setBillingFilters({ ...billingFilters, cpf: maskCpf(event.target.value) })} placeholder="CPF" />
           <select value={billingFilters.status} onChange={(event) => setBillingFilters({ ...billingFilters, status: event.target.value })}>{["Todos", "A vencer", "Vence hoje", "Vencido", "Pago", "Cancelado"].map((item) => <option key={item}>{item}</option>)}</select>
@@ -4287,11 +4364,50 @@ export default function App() {
           <input type="date" value={billingFilters.periodEnd} onChange={(event) => setBillingFilters({ ...billingFilters, periodEnd: event.target.value })} />
           <select value={billingFilters.view} onChange={(event) => setBillingFilters({ ...billingFilters, view: event.target.value })}>{["Todos", "Pagos", "Vencidos", "Em aberto"].map((item) => <option key={item}>{item}</option>)}</select>
         </div>
-        <div className="stock-table-wrap"><table><thead><tr><th>Cliente</th><th>CPF</th><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Pago</th><th>Status</th><th>Pagamento</th><th>Ações</th></tr></thead><tbody>{charges.map((charge) => { const customer = billingCustomerById(charge.customerId); const status = billingChargeStatus(charge); return <tr key={charge.id}><td>{customer?.fullName || "--"}</td><td>{customer?.cpf || "--"}</td><td>{charge.installmentNumber}/{charge.totalInstallments}</td><td>{formatDate(charge.dueDate)}</td><td>{money(Number(charge.amount || 0))}</td><td>{money(billingChargePaidAmount(charge))}</td><td><span className="status-pill">{status}</span></td><td>{charge.paymentMethod}</td><td><div className="action-buttons"><button type="button" onClick={() => markBillingChargePaid(charge)}>Pagar</button><button type="button" onClick={() => registerBillingPartialPayment(charge)}>Parcial</button><button type="button" onClick={() => editBillingDueDate(charge)}>Vencimento</button><button type="button" onClick={() => addBillingObservation(charge)}>Obs.</button><button type="button" onClick={() => setSelectedBillingCharge(charge)}>Histórico</button><button type="button" onClick={() => cancelBillingCharge(charge)}>Cancelar</button></div></td></tr>; })}</tbody></table></div>
+        <div className="stock-table-wrap billing-table-card">
+          <table className="billing-prototype-table">
+            <thead><tr><th>Cliente</th><th>CPF</th><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Pago</th><th>Status</th><th>Pagamento</th><th>Ações</th></tr></thead>
+            <tbody>
+              {chargeGroups.map((group) => (
+                <tr key={group.id}>
+                  <td>{group.customer?.fullName || "--"}</td>
+                  <td>{group.customer?.cpf || "--"}</td>
+                  <td>{group.installmentText}</td>
+                  <td>{formatDate(group.dueDate)}</td>
+                  <td>{money(group.totalAmount)}</td>
+                  <td>{money(group.paidAmount)}</td>
+                  <td><span className={`billing-status-pill ${billingGroupStatusClass(group.status)}`}>{group.status}</span></td>
+                  <td>{group.paymentMethod}</td>
+                  <td>
+                    <div className="table-action-menu billing-action-menu">
+                      <button
+                        type="button"
+                        className="billing-gear-button"
+                        aria-label="Abrir ações da cobrança"
+                        onClick={() => setOpenBillingActionId(openBillingActionId === group.id ? "" : group.id)}
+                      >
+                        ⚙
+                      </button>
+                      {openBillingActionId === group.id && (
+                        <div className="table-action-menu-list billing-action-list">
+                          <button type="button" onClick={() => markBillingGroupPaid(group)}>Pagar</button>
+                          <button type="button" onClick={() => { setOpenBillingActionId(""); registerBillingPartialPayment(group.primaryCharge); }}>Pagamento parcial</button>
+                          <button type="button" onClick={() => { setOpenBillingActionId(""); editBillingDueDate(group.primaryCharge); }}>Editar vencimento</button>
+                          <button type="button" onClick={() => { setOpenBillingActionId(""); addBillingObservation(group.primaryCharge); }}>Adicionar observação</button>
+                          <button type="button" onClick={() => { setOpenBillingActionId(""); setSelectedBillingCharge(group.primaryCharge); }}>Histórico</button>
+                          <button type="button" className="danger-action" onClick={() => cancelBillingGroup(group)}>Cancelar cobrança</button>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     );
   }
-
   function renderBillingHistoryModal() {
     if (!selectedBillingCharge) return null;
     const customer = billingCustomerById(selectedBillingCharge.customerId);
@@ -6187,14 +6303,4 @@ export default function App() {
     </AppShell>
   );
 }
-
-
-
-
-
-
-
-
-
-
 
