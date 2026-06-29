@@ -62,6 +62,7 @@ import {
   isOperationalUser as isPermissionOperationalUser
 } from "./utils/permissions";
 import { getQrActionUrl } from "./utils/qr";
+import { getApiSessionToken } from "./services/api";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { useTenantPersistentState } from "./hooks/useTenantPersistentState";
 
@@ -96,6 +97,10 @@ export default function App() {
     const session = restoreSession();
 
     if (session.isLogged) {
+      if (canUseAppDataApi() && !getApiSessionToken()) {
+        clearStoredSession();
+        return;
+      }
       setLoggedUser(session.user);
       setIsLogged(true);
       setPage(session.page);
@@ -146,7 +151,7 @@ export default function App() {
   const [userForm, setUserForm] = useState(emptyUserForm);
 
   useEffect(() => {
-    if (!canUseAppDataApi() || !isLogged || !loggedUser) return;
+    if (!canUseAppDataApi() || !isLogged || !loggedUser || !getApiSessionToken()) return;
 
     let active = true;
     loadAppData()
@@ -288,7 +293,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!canUseAppDataApi()) {
+    if (!canUseAppDataApi() || !getApiSessionToken()) {
       setStockCatalogSyncState("local");
       return;
     }
@@ -1050,7 +1055,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!canUseAppDataApi() || !activeCompanyId || !isLogged) return;
+    if (!canUseAppDataApi() || !activeCompanyId || !isLogged || !getApiSessionToken()) return;
     let active = true;
 
     loadClientBillingData(activeCompanyId)
@@ -5445,6 +5450,8 @@ export default function App() {
     </AppShell>
   );
 }
+
+
 
 
 
