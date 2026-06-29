@@ -498,3 +498,55 @@ export async function updateClientBillingData(req, res) {
   return res.json(data.payload.billingData);
 }
 
+
+export async function getClientSalesData(req, res) {
+  if (!requireCompanyAccess(req, res, req.params.id)) return;
+
+  const { data, error } = await supabaseAdmin
+    .from("app_clients")
+    .select("payload")
+    .eq("id", req.params.id)
+    .maybeSingle();
+
+  if (error) return res.status(400).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: "Cliente nao encontrado." });
+
+  const sales = data.payload?.salesData || {};
+  return res.json({
+    sales: Array.isArray(sales.sales) ? sales.sales : [],
+    updatedAt: sales.updatedAt || null
+  });
+}
+
+export async function updateClientSalesData(req, res) {
+  if (!requireCompanyAccess(req, res, req.params.id)) return;
+
+  const { data: current, error: currentError } = await supabaseAdmin
+    .from("app_clients")
+    .select("payload")
+    .eq("id", req.params.id)
+    .maybeSingle();
+
+  if (currentError) return res.status(400).json({ error: currentError.message });
+  if (!current) return res.status(404).json({ error: "Cliente nao encontrado." });
+
+  const salesData = {
+    sales: Array.isArray(req.body.sales) ? req.body.sales : [],
+    updatedAt: new Date().toISOString()
+  };
+
+  const payload = {
+    ...(current.payload || {}),
+    salesData
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from("app_clients")
+    .update({ payload, updated_at: new Date().toISOString() })
+    .eq("id", req.params.id)
+    .select("payload")
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  return res.json(data.payload.salesData);
+}

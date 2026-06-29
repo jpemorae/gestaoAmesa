@@ -24,12 +24,14 @@ import {
   loadAppData,
   loadClientStockCatalog,
   loadClientBillingData,
+  loadClientSalesData,
   loginAppUser,
   removeAppClient,
   removeAppUser,
   saveAppClient,
   saveClientStockCatalog,
   saveClientBillingData,
+  saveClientSalesData,
   saveAppUser
 } from "./services/appDataService";
 import {
@@ -66,10 +68,10 @@ import { getApiSessionToken } from "./services/api";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { useTenantPersistentState } from "./hooks/useTenantPersistentState";
 
-function StockModal({ title, children, onClose }) {
+function StockModal({ title, children, onClose, className = "" }) {
   return (
     <div className="stock-modal-backdrop">
-      <section className="stock-modal">
+      <section className={`stock-modal ${className}`.trim()}>
         <div className="stock-modal-header">
           <h2>{title}</h2>
           <button className="secondary" type="button" onClick={onClose}>Fechar</button>
@@ -136,7 +138,7 @@ export default function App() {
     financialStatus: "Em dia",
     themeColor: "#0b2f4f",
     status: "Ativo",
-    enabledModules: ["acompanhamento", "estoque", "etiquetas", "checklist", "faturamento", "acesso"]
+    enabledModules: ["acompanhamento", "estoque", "etiquetas", "checklist", "vendas", "faturamento", "acesso"]
   };
 
   const emptyUserForm = {
@@ -544,6 +546,29 @@ export default function App() {
   const [selectedBillingCustomerId, setSelectedBillingCustomerId] = useState("");
   const [selectedBillingCharge, setSelectedBillingCharge] = useState(null);
 
+  const emptySaleForm = {
+    saleType: "Avulsa",
+    customerId: "",
+    customerSearch: "",
+    buyerName: "",
+    buyerPhone: "",
+    saleModel: "À vista",
+    paymentMethod: "PIX",
+    paymentDate: today(),
+    paymentStatus: "Pago",
+    installments: "2",
+    firstDueDate: today(),
+    fixedDueDay: "",
+    notes: ""
+  };
+  const [showSaleModal, setShowSaleModal] = useState(false);
+  const [editingSaleId, setEditingSaleId] = useState(null);
+  const [salesRecords, setSalesRecords] = useTenantPersistentState("gestao_mesa_sales_records", activeCompanyId, [], legacyCompanyId);
+  const [saleForm, setSaleForm] = useState(emptySaleForm);
+  const [saleItems, setSaleItems] = useState([{ menuItemId: "", quantity: 1, unitPrice: 0, discount: 0 }]);
+  const [salesFilters, setSalesFilters] = useState({ periodStart: "", periodEnd: "", customer: "", saleType: "Todos", paymentMethod: "Todos", status: "Todos", item: "" });
+  const [selectedSale, setSelectedSale] = useState(null);
+
   useEffect(() => {
     const migrationKey = "gestao_mesa_migration_dashboard_module_v1";
     if (localStorage.getItem(migrationKey)) return;
@@ -570,6 +595,20 @@ export default function App() {
     localStorage.setItem(migrationKey, "true");
   }, [setClients, setUsers]);
 
+  useEffect(() => {
+    const migrationKey = "gestao_mesa_migration_sales_module_v1";
+    if (localStorage.getItem(migrationKey)) return;
+
+    setClients((currentClients) => currentClients.map((client) => ({
+      ...client,
+      enabledModules: Array.from(new Set([...(client.enabledModules || []), "vendas"]))
+    })));
+    setUsers((currentUsers) => currentUsers.map((user) => user.userType === "client" ? {
+      ...user,
+      allowedModules: Array.from(new Set([...(user.allowedModules || ["checklist", "vendas", "faturamento", "acesso"]), "vendas"]))
+    } : user));
+    localStorage.setItem(migrationKey, "true");
+  }, [setClients, setUsers]);
   const monthlyRevenue = useMemo(
     () => clients.reduce((sum, client) => sum + Number(client.monthlyFee || 0), 0),
     [clients]
@@ -1117,6 +1156,40 @@ export default function App() {
     };
   }, [activeCompanyId, isLogged]);
 
+  async function persistSalesData(nextSales = salesRecords, options = {}) {
+    if (!canUseAppDataApi() || !activeCompanyId) return true;
+    try {
+      await saveClientSalesData(activeCompanyId, { sales: nextSales });
+      return true;
+    } catch (error) {
+      if (!options.silent) alert(`Venda salva neste computador, mas nao sincronizada no banco: ${error.message}`);
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    if (!canUseAppDataApi() || !activeCompanyId || !isLogged || !getApiSessionToken()) return;
+    let active = true;
+
+    loadClientSalesData(activeCompanyId)
+      .then(async (data) => {
+        if (!active || !data) return;
+        const remoteSales = Array.isArray(data.sales) ? data.sales : [];
+        if (remoteSales.length) {
+          setSalesRecords(remoteSales);
+          return;
+        }
+        const localSales = readTenantStoredValue("gestao_mesa_sales_records", activeCompanyId, salesRecords);
+        if (Array.isArray(localSales) && localSales.length) {
+          await saveClientSalesData(activeCompanyId, { sales: localSales });
+        }
+      })
+      .catch((error) => console.warn("Falha ao sincronizar vendas:", error.message));
+
+    return () => {
+      active = false;
+    };
+  }, [activeCompanyId, isLogged]);
   function resetMenuItemForm() {
     setMenuItemForm({ ...emptyMenuItemForm, portions: [{ stockItemId: "", quantity: "", unit: "g" }] });
     setEditingMenuItemId(null);
@@ -3537,6 +3610,348 @@ export default function App() {
     return isoDate(target);
   }
 
+  function activeMenuItemsForSale() {
+    return menuItems.filter((item) => item.status === "Ativo");
+  }
+
+  function menuItemById(menuItemId) {
+    return menuItems.find((item) => item.id === menuItemId) || null;
+  }
+
+  function saleCustomerById(customerId) {
+    return billingCustomers.find((customer) => customer.id === customerId) || null;
+  }
+
+  function saleBuyerName(sale) {
+    if (sale.saleType === "Cliente") return sale.customerName || saleCustomerById(sale.customerId)?.fullName || "Cliente";
+    return sale.buyerName || "Venda avulsa";
+  }
+
+  function saleTotals(items = saleItems) {
+    return items.reduce((totals, item) => {
+      const quantity = Number(item.quantity || 0);
+      const unitPrice = Number(item.unitPrice || 0);
+      const discount = Number(item.discount || 0);
+      const gross = quantity * unitPrice;
+      return {
+        gross: totals.gross + gross,
+        discount: totals.discount + discount,
+        final: totals.final + Math.max(gross - discount, 0)
+      };
+    }, { gross: 0, discount: 0, final: 0 });
+  }
+
+  function saleStatus(sale) {
+    if (sale.status === "Aberta") return "Aberta";
+    if (sale.status === "Cancelada") return "Cancelada";
+    if (sale.status === "Paga") return "Paga";
+    if (sale.status === "Parcialmente paga") return "Parcialmente paga";
+    if (sale.saleModel === "Parcelada") {
+      const relatedCharges = billingCharges.filter((charge) => charge.saleId === sale.id);
+      if (relatedCharges.some((charge) => billingChargeStatus(charge) === "Vencido")) return "Em atraso";
+      if (relatedCharges.length && relatedCharges.every((charge) => billingChargeStatus(charge) === "Pago")) return "Paga";
+    }
+    if (sale.paymentStatus === "Pendente") return "Finalizada";
+    return sale.status || "Finalizada";
+  }
+
+  function resetSaleForm() {
+    setSaleForm({ ...emptySaleForm, paymentDate: today(), firstDueDate: today() });
+    setSaleItems([{ menuItemId: "", quantity: 1, unitPrice: 0, discount: 0 }]);
+  }
+
+  function updateSaleForm(field, value) {
+    setSaleForm((current) => {
+      const next = { ...current, [field]: value };
+      if (field === "saleType" && value === "Avulsa") {
+        next.customerId = "";
+        next.customerSearch = "";
+        next.saleModel = "À vista";
+      }
+      if (field === "saleModel" && value === "Parcelada") {
+        next.paymentStatus = "Pendente";
+      }
+      return next;
+    });
+  }
+
+  function updateSaleItem(index, field, value) {
+    const nextItems = saleItems.map((item, currentIndex) => {
+      if (currentIndex !== index) return item;
+      const next = { ...item, [field]: value };
+      if (field === "menuItemId") {
+        const menuItem = menuItemById(value);
+        next.unitPrice = Number(menuItem?.saleValue || 0);
+      }
+      if (["quantity", "unitPrice", "discount"].includes(field)) next[field] = Number(value || 0);
+      return next;
+    });
+    setSaleItems(nextItems);
+  }
+
+  function addSaleItem() {
+    setSaleItems([...saleItems, { menuItemId: "", quantity: 1, unitPrice: 0, discount: 0 }]);
+  }
+
+  function removeSaleItem(index) {
+    const nextItems = saleItems.filter((_, currentIndex) => currentIndex !== index);
+    setSaleItems(nextItems.length ? nextItems : [{ menuItemId: "", quantity: 1, unitPrice: 0, discount: 0 }]);
+  }
+
+  function buildSaleBillingCharges(sale, totals) {
+    if (sale.saleType !== "Cliente") return [];
+    if (sale.saleModel === "À vista" && sale.paymentStatus === "Pago") {
+      return [{
+        id: crypto.randomUUID(),
+        customerId: sale.customerId,
+        paymentMethod: sale.paymentMethod,
+        chargeType: "À vista",
+        totalAmount: totals.final,
+        installmentNumber: 1,
+        totalInstallments: 1,
+        amount: totals.final,
+        dueDate: sale.paymentDate || today(),
+        fixedDueDay: "",
+        status: "Pago",
+        paidAmount: totals.final,
+        paidAt: sale.paymentDate || today(),
+        notes: `Venda ${sale.code}`,
+        saleId: sale.id,
+        history: [{ action: "Pagamento registrado pela venda", note: sale.code, date: new Date().toLocaleString("pt-BR") }],
+        createdAt: new Date().toISOString()
+      }];
+    }
+
+    const installments = sale.saleModel === "Parcelada" ? Math.max(Number(sale.installments || 1), 1) : 1;
+    const amount = Number((totals.final / installments).toFixed(2));
+    return Array.from({ length: installments }, (_, index) => ({
+      id: crypto.randomUUID(),
+      customerId: sale.customerId,
+      paymentMethod: sale.paymentMethod,
+      chargeType: sale.saleModel === "Parcelada" ? "Parcelado" : "À vista",
+      totalAmount: totals.final,
+      installmentNumber: index + 1,
+      totalInstallments: installments,
+      amount: index === installments - 1 ? Number((totals.final - amount * (installments - 1)).toFixed(2)) : amount,
+      dueDate: addMonthsToDate(sale.firstDueDate || today(), index, sale.fixedDueDay),
+      fixedDueDay: sale.fixedDueDay || "",
+      status: "A vencer",
+      paidAmount: 0,
+      paidAt: "",
+      notes: `Venda ${sale.code}`,
+      saleId: sale.id,
+      history: [{ action: "Cobrança gerada pela venda", note: sale.code, date: new Date().toLocaleString("pt-BR") }],
+      createdAt: new Date().toISOString()
+    }));
+  }
+
+  function saleFormHasUnsavedData() {
+    return Boolean(
+      editingSaleId
+      || saleForm.customerId
+      || saleForm.customerSearch
+      || saleForm.buyerName.trim()
+      || saleForm.buyerPhone.trim()
+      || saleForm.notes.trim()
+      || saleForm.saleModel !== "À vista"
+      || saleForm.paymentMethod !== "PIX"
+      || saleForm.paymentDate !== today()
+      || saleForm.firstDueDate !== today()
+      || saleItems.some((item) => item.menuItemId || Number(item.quantity || 0) !== 1 || Number(item.unitPrice || 0) > 0 || Number(item.discount || 0) > 0)
+    );
+  }
+
+  function closeSaleModal() {
+    if (saleFormHasUnsavedData() && !confirm("Existem dados não salvos. Deseja sair mesmo assim?")) return;
+    resetSaleForm();
+    setEditingSaleId(null);
+    setShowSaleModal(false);
+  }
+
+  function openSaleModal(sale = null) {
+    if (sale) {
+      setEditingSaleId(sale.id);
+      setSaleForm({
+        ...emptySaleForm,
+        saleType: sale.saleType || "Avulsa",
+        customerId: sale.customerId || "",
+        customerSearch: sale.customerName || sale.buyerName || "",
+        buyerName: sale.buyerName || "",
+        buyerPhone: sale.buyerPhone || "",
+        saleModel: sale.saleModel || "À vista",
+        paymentMethod: sale.paymentMethod || "PIX",
+        paymentDate: sale.paymentDate || today(),
+        paymentStatus: sale.paymentStatus || "Pendente",
+        installments: String(sale.installments || 2),
+        firstDueDate: sale.firstDueDate || today(),
+        fixedDueDay: sale.fixedDueDay || "",
+        notes: sale.notes || ""
+      });
+      setSaleItems((sale.items || []).length ? sale.items.map((item) => ({
+        menuItemId: item.menuItemId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discount: item.discount
+      })) : [{ menuItemId: "", quantity: 1, unitPrice: 0, discount: 0 }]);
+    } else {
+      resetSaleForm();
+      setEditingSaleId(null);
+    }
+    setShowSaleModal(true);
+  }
+
+  function buildSaleFromForm(finalize = false) {
+    const activeMenuIds = new Set(activeMenuItemsForSale().map((item) => item.id));
+    const items = saleItems
+      .filter((item) => item.menuItemId && Number(item.quantity || 0) > 0)
+      .map((item) => {
+        const menuItem = menuItemById(item.menuItemId);
+        return {
+          menuItemId: item.menuItemId,
+          name: menuItem?.dishName || "Item do menu",
+          category: menuItem?.type || "--",
+          description: (menuItem?.portions || []).map((portion) => portion.stockItemName).filter(Boolean).join(", "),
+          quantity: Number(item.quantity || 0),
+          unitPrice: Number(item.unitPrice || 0),
+          discount: Number(item.discount || 0),
+          subtotal: Math.max(Number(item.quantity || 0) * Number(item.unitPrice || 0) - Number(item.discount || 0), 0)
+        };
+      });
+
+    if (items.some((item) => !activeMenuIds.has(item.menuItemId))) return { error: "Apenas itens ativos do Menu podem ser vendidos." };
+    if (finalize && !items.length) return { error: "Adicione ao menos um item ativo do menu." };
+    if (saleForm.saleType === "Cliente" && finalize && !saleForm.customerId) return { error: "Selecione o cliente cadastrado." };
+    if (saleForm.saleType === "Avulsa" && saleForm.saleModel !== "À vista") return { error: "Venda avulsa só pode ser à vista." };
+    if (saleForm.saleModel === "Parcelada" && saleForm.saleType !== "Cliente") return { error: "Venda parcelada exige cliente cadastrado." };
+    if (finalize && saleForm.saleModel === "Parcelada" && Number(saleForm.installments || 0) < 2) return { error: "Informe ao menos 2 parcelas." };
+
+    const existingSale = salesRecords.find((sale) => sale.id === editingSaleId);
+    const totals = saleTotals(items);
+    const customer = saleCustomerById(saleForm.customerId);
+    const paidNow = finalize && saleForm.saleModel === "À vista" && saleForm.paymentStatus === "Pago";
+    const sale = {
+      id: editingSaleId || crypto.randomUUID(),
+      code: existingSale?.code || `VEN-${Date.now().toString().slice(-6)}`,
+      saleDate: existingSale?.saleDate || today(),
+      createdAt: existingSale?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      saleType: saleForm.saleType === "Cliente" ? "Cliente" : "Avulsa",
+      customerId: saleForm.saleType === "Cliente" ? saleForm.customerId : "",
+      customerName: customer?.fullName || "",
+      customerCpf: customer?.cpf || "",
+      customerPhone: customer?.phone || "",
+      buyerName: saleForm.saleType === "Avulsa" ? saleForm.buyerName.trim() : "",
+      buyerPhone: saleForm.saleType === "Avulsa" ? saleForm.buyerPhone.trim() : "",
+      saleModel: saleForm.saleType === "Avulsa" ? "À vista" : saleForm.saleModel,
+      paymentMethod: saleForm.paymentMethod,
+      paymentDate: paidNow ? (saleForm.paymentDate || today()) : "",
+      paymentStatus: paidNow ? "Pago" : "Pendente",
+      installments: saleForm.saleModel === "Parcelada" ? Number(saleForm.installments || 1) : 1,
+      firstDueDate: saleForm.firstDueDate || today(),
+      fixedDueDay: saleForm.fixedDueDay || "",
+      items,
+      totalGross: totals.gross,
+      totalDiscount: totals.discount,
+      totalFinal: totals.final,
+      paidAmount: paidNow ? totals.final : Number(existingSale?.paidAmount || 0),
+      status: finalize ? (paidNow ? "Paga" : "Finalizada") : "Aberta",
+      notes: saleForm.notes || "",
+      history: [
+        ...(existingSale?.history || []),
+        { action: finalize ? "Venda finalizada" : "Venda salva como rascunho", note: paidNow ? "Pagamento confirmado" : "", date: new Date().toLocaleString("pt-BR") }
+      ]
+    };
+
+    return { sale, totals };
+  }
+
+  async function persistSaleRecord(sale, totals, finalize = false) {
+    const nextSales = editingSaleId
+      ? salesRecords.map((current) => current.id === editingSaleId ? sale : current)
+      : [sale, ...salesRecords];
+    const generatedCharges = finalize ? buildSaleBillingCharges(sale, totals) : [];
+    const nextCharges = generatedCharges.length ? [...generatedCharges, ...billingCharges.filter((charge) => charge.saleId !== sale.id)] : billingCharges;
+    setSalesRecords(nextSales);
+    setBillingCharges(nextCharges);
+    await persistSalesData(nextSales, { silent: true });
+    if (generatedCharges.length) await persistBillingData(billingCustomers, nextCharges, { silent: true });
+    resetSaleForm();
+    setEditingSaleId(null);
+    setShowSaleModal(false);
+  }
+
+  async function saveSaleDraft(event) {
+    event.preventDefault();
+    const result = buildSaleFromForm(false);
+    if (result.error) return alert(result.error);
+    await persistSaleRecord(result.sale, result.totals, false);
+  }
+
+  async function finalizeSale(event) {
+    event.preventDefault();
+    const result = buildSaleFromForm(true);
+    if (result.error) return alert(result.error);
+    await persistSaleRecord(result.sale, result.totals, true);
+  }
+  function updateSaleRecord(saleId, updater) {
+    const nextSales = salesRecords.map((sale) => sale.id === saleId ? updater(sale) : sale);
+    setSalesRecords(nextSales);
+    persistSalesData(nextSales, { silent: true });
+  }
+
+  function cancelSale(sale) {
+    if (!confirm("Deseja cancelar esta venda? Os dados serão preservados.")) return;
+    updateSaleRecord(sale.id, (current) => ({
+      ...current,
+      status: "Cancelada",
+      history: [...(current.history || []), { action: "Venda cancelada", note: "", date: new Date().toLocaleString("pt-BR") }]
+    }));
+  }
+
+  function markSalePaid(sale) {
+    updateSaleRecord(sale.id, (current) => ({
+      ...current,
+      status: "Paga",
+      paymentStatus: "Pago",
+      paidAmount: Number(current.totalFinal || 0),
+      paymentDate: today(),
+      history: [...(current.history || []), { action: "Venda marcada como paga", note: money(Number(current.totalFinal || 0)), date: new Date().toLocaleString("pt-BR") }]
+    }));
+    const nextCharges = billingCharges.map((charge) => charge.saleId === sale.id ? {
+      ...charge,
+      status: "Pago",
+      paidAmount: Number(charge.amount || 0),
+      paidAt: today(),
+      history: [...(charge.history || []), { action: "Pagamento pela venda", note: sale.code, date: new Date().toLocaleString("pt-BR") }]
+    } : charge);
+    setBillingCharges(nextCharges);
+    persistBillingData(billingCustomers, nextCharges, { silent: true });
+  }
+
+  function filteredSalesRecords() {
+    return salesRecords.filter((sale) => {
+      const status = saleStatus(sale);
+      const buyer = saleBuyerName(sale).toLowerCase();
+      const matchesStart = !salesFilters.periodStart || sale.saleDate >= salesFilters.periodStart;
+      const matchesEnd = !salesFilters.periodEnd || sale.saleDate <= salesFilters.periodEnd;
+      const matchesCustomer = !salesFilters.customer || buyer.includes(salesFilters.customer.toLowerCase()) || onlyDigits(sale.customerCpf).includes(onlyDigits(salesFilters.customer)) || onlyDigits(sale.customerPhone || sale.buyerPhone).includes(onlyDigits(salesFilters.customer));
+      const matchesType = salesFilters.saleType === "Todos" || sale.saleType === salesFilters.saleType;
+      const matchesPayment = salesFilters.paymentMethod === "Todos" || sale.paymentMethod === salesFilters.paymentMethod;
+      const matchesStatus = salesFilters.status === "Todos" || status === salesFilters.status;
+      const matchesItem = !salesFilters.item || (sale.items || []).some((item) => item.name.toLowerCase().includes(salesFilters.item.toLowerCase()));
+      return matchesStart && matchesEnd && matchesCustomer && matchesType && matchesPayment && matchesStatus && matchesItem;
+    });
+  }
+
+  function saleInstallments(saleId) {
+    return billingCharges.filter((charge) => charge.saleId === saleId);
+  }
+
+  function saleWhatsappUrl(sale) {
+    const phone = onlyDigits(sale.customerPhone || sale.buyerPhone);
+    const message = encodeURIComponent(`Resumo da venda ${sale.code}: ${saleBuyerName(sale)} - Total ${money(Number(sale.totalFinal || 0))}.`);
+    return phone ? `https://wa.me/55${phone}?text=${message}` : `https://wa.me/?text=${message}`;
+  }
   function billingCustomerById(customerId) {
     return billingCustomers.find((customer) => customer.id === customerId) || null;
   }
@@ -3892,6 +4307,119 @@ export default function App() {
     );
   }
 
+  function renderSaleCustomerPicker() {
+    const query = saleForm.customerSearch.toLowerCase();
+    const customers = billingCustomers.filter((customer) => customer.status !== "Inativo" && (!query || customer.fullName.toLowerCase().includes(query) || onlyDigits(customer.cpf).includes(onlyDigits(query)) || onlyDigits(customer.phone).includes(onlyDigits(query))));
+    const selected = saleCustomerById(saleForm.customerId);
+    return (
+      <div className="sale-customer-box stock-form-grid-full">
+        <label>Buscar cliente<input value={saleForm.customerSearch} onChange={(event) => updateSaleForm("customerSearch", event.target.value)} placeholder="Nome, CPF ou telefone" /></label>
+        <label>Selecionar cliente<select value={saleForm.customerId} onChange={(event) => updateSaleForm("customerId", event.target.value)}><option value="">Selecione</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.fullName} - {customer.cpf} - {customer.phone}</option>)}</select></label>
+        {selected && <div className="sale-client-summary"><strong>{selected.fullName}</strong><span>{selected.cpf} · {selected.phone}</span><small>{selected.email || "Sem e-mail"}</small></div>}
+      </div>
+    );
+  }
+
+  function renderSaleItemsEditor() {
+    const activeItems = activeMenuItemsForSale();
+    return (
+      <div className="sale-items-box stock-form-grid-full">
+        <div className="stock-title-row compact"><div><strong>Itens vendidos</strong><p className="stock-help">Use apenas itens ativos do cadastro de Menu.</p></div><button className="secondary" type="button" onClick={addSaleItem}>Adicionar item</button></div>
+        {saleItems.map((item, index) => {
+          const selected = menuItemById(item.menuItemId);
+          const subtotal = Math.max(Number(item.quantity || 0) * Number(item.unitPrice || 0) - Number(item.discount || 0), 0);
+          return (
+            <div className="sale-item-row" key={index}>
+              <select value={item.menuItemId} onChange={(event) => updateSaleItem(index, "menuItemId", event.target.value)}><option value="">Item do menu</option>{activeItems.map((menuItem) => <option key={menuItem.id} value={menuItem.id}>{menuItem.dishName} - {menuItem.type} - {money(Number(menuItem.saleValue || 0))}</option>)}</select>
+              <input type="number" min="1" step="1" value={item.quantity} onChange={(event) => updateSaleItem(index, "quantity", event.target.value)} placeholder="Qtd." />
+              <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateSaleItem(index, "unitPrice", event.target.value)} placeholder="Valor unit." />
+              <input type="number" min="0" step="0.01" value={item.discount} onChange={(event) => updateSaleItem(index, "discount", event.target.value)} placeholder="Desconto" />
+              <span>{money(subtotal)}</span>
+              <button className="danger" type="button" onClick={() => removeSaleItem(index)}>Remover</button>
+              {selected && <small>{selected.type} · {(selected.portions || []).length} porcionamento(s)</small>}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderSaleModal() {
+    if (!showSaleModal) return null;
+    const totals = saleTotals();
+    const canInstallment = saleForm.saleType === "Cliente";
+    return (
+      <StockModal title={editingSaleId ? "Editar venda aberta" : "Nova venda"} onClose={closeSaleModal} className="sales-entry-modal">
+        <div className="sales-modal-scroll">
+          <p className="stock-help stock-modal-help">Registre a venda sem sair da listagem. Use apenas itens ativos do cadastro de Menu.</p>
+          <form className="stock-form-grid stock-modal-form sale-modal-form" onSubmit={(event) => event.preventDefault()}>
+            <label>Tipo de venda<select value={saleForm.saleType} onChange={(event) => updateSaleForm("saleType", event.target.value)}><option>Avulsa</option><option>Cliente</option></select></label>
+            <label>Modelo da venda<select value={saleForm.saleModel} disabled={!canInstallment} onChange={(event) => updateSaleForm("saleModel", event.target.value)}><option>À vista</option><option>Parcelada</option></select></label>
+            {saleForm.saleType === "Cliente" ? renderSaleCustomerPicker() : (<><label>Nome do comprador<input value={saleForm.buyerName} onChange={(event) => updateSaleForm("buyerName", event.target.value)} placeholder="Opcional" /></label><label>Telefone<input value={saleForm.buyerPhone} onChange={(event) => updateSaleForm("buyerPhone", event.target.value)} placeholder="Opcional" /></label></>)}
+            {renderSaleItemsEditor()}
+            <label>Forma de pagamento<select value={saleForm.paymentMethod} onChange={(event) => updateSaleForm("paymentMethod", event.target.value)}>{["PIX", "Dinheiro", "Cartão de débito", "Cartão de crédito", "Transferência", "Boleto"].map((item) => <option key={item}>{item}</option>)}</select></label>
+            {saleForm.saleModel === "À vista" && <label>Status do pagamento<select value={saleForm.paymentStatus} onChange={(event) => updateSaleForm("paymentStatus", event.target.value)}><option>Pago</option><option>Pendente</option></select></label>}
+            {saleForm.saleModel === "À vista" && saleForm.paymentStatus === "Pago" && <label>Data do pagamento<input type="date" value={saleForm.paymentDate} onChange={(event) => updateSaleForm("paymentDate", event.target.value)} /></label>}
+            {saleForm.saleModel === "À vista" && saleForm.paymentStatus === "Pendente" && <label>Vencimento<input type="date" value={saleForm.firstDueDate} onChange={(event) => updateSaleForm("firstDueDate", event.target.value)} /></label>}
+            {saleForm.saleModel === "Parcelada" && <label>Quantidade de parcelas<input type="number" min="2" value={saleForm.installments} onChange={(event) => updateSaleForm("installments", event.target.value)} /></label>}
+            {saleForm.saleModel === "Parcelada" && <label>Primeiro vencimento<input type="date" value={saleForm.firstDueDate} onChange={(event) => updateSaleForm("firstDueDate", event.target.value)} /></label>}
+            {saleForm.saleModel === "Parcelada" && <label>Dia fixo de vencimento<input type="number" min="1" max="31" value={saleForm.fixedDueDay} onChange={(event) => updateSaleForm("fixedDueDay", event.target.value)} placeholder="Opcional" /></label>}
+            <label className="stock-form-grid-full">Observação<input value={saleForm.notes} onChange={(event) => updateSaleForm("notes", event.target.value)} placeholder="Observação da venda" /></label>
+            <div className="sale-total-panel stock-form-grid-full"><span>Bruto <strong>{money(totals.gross)}</strong></span><span>Desconto <strong>{money(totals.discount)}</strong></span><span>Total final <strong>{money(totals.final)}</strong></span>{saleForm.saleModel === "Parcelada" && <span>Parcela <strong>{money(totals.final / Math.max(Number(saleForm.installments || 1), 1))}</strong></span>}</div>
+            <div className="stock-modal-footer sale-modal-footer"><button className="secondary" type="button" onClick={closeSaleModal}>Cancelar</button><button className="secondary" type="button" onClick={saveSaleDraft}>Salvar venda</button><button className="primary" type="button" onClick={finalizeSale}>Finalizar venda</button></div>
+          </form>
+        </div>
+      </StockModal>
+    );
+  }
+  function renderSalesList() {
+    const sales = filteredSalesRecords();
+    return (
+      <section className="module-content stock-wide sales-workspace">
+        <div className="stock-title-row"><div><h2>Vendas realizadas</h2><p className="stock-help">Acompanhe vendas, rascunhos, pagamentos e parcelas vinculadas ao faturamento.</p></div><button className="primary" type="button" onClick={() => openSaleModal()}>Nova Venda</button></div>
+        <div className="stock-filter-grid sales-filter-grid">
+          <input type="date" value={salesFilters.periodStart} onChange={(event) => setSalesFilters({ ...salesFilters, periodStart: event.target.value })} />
+          <input type="date" value={salesFilters.periodEnd} onChange={(event) => setSalesFilters({ ...salesFilters, periodEnd: event.target.value })} />
+          <input value={salesFilters.customer} onChange={(event) => setSalesFilters({ ...salesFilters, customer: event.target.value })} placeholder="Cliente, CPF ou telefone" />
+          <select value={salesFilters.saleType} onChange={(event) => setSalesFilters({ ...salesFilters, saleType: event.target.value })}>{["Todos", "Avulsa", "Cliente"].map((item) => <option key={item}>{item}</option>)}</select>
+          <select value={salesFilters.paymentMethod} onChange={(event) => setSalesFilters({ ...salesFilters, paymentMethod: event.target.value })}>{["Todos", "PIX", "Dinheiro", "Cartão de débito", "Cartão de crédito", "Transferência", "Boleto"].map((item) => <option key={item}>{item}</option>)}</select>
+          <select value={salesFilters.status} onChange={(event) => setSalesFilters({ ...salesFilters, status: event.target.value })}>{["Todos", "Aberta", "Finalizada", "Cancelada", "Paga", "Parcialmente paga", "Em atraso"].map((item) => <option key={item}>{item}</option>)}</select>
+          <input value={salesFilters.item} onChange={(event) => setSalesFilters({ ...salesFilters, item: event.target.value })} placeholder="Item vendido" />
+        </div>
+        <div className="stock-table-wrap"><table><thead><tr><th>Data</th><th>Cliente/comprador</th><th>Tipo</th><th>Itens</th><th>Total</th><th>Pagamento</th><th>Status</th><th>Ações</th></tr></thead><tbody>{sales.map((sale) => { const status = saleStatus(sale); return <tr key={sale.id}><td>{formatDate(sale.saleDate)}</td><td>{saleBuyerName(sale)}</td><td>{sale.saleType}</td><td>{(sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", ")}</td><td>{money(Number(sale.totalFinal || 0))}</td><td>{sale.paymentMethod}</td><td><span className="status-pill">{status}</span></td><td><div className="action-buttons">{status === "Aberta" && <button type="button" onClick={() => openSaleModal(sale)}>Editar</button>}<button type="button" onClick={() => setSelectedSale(sale)}>Detalhes</button><button type="button" onClick={() => markSalePaid(sale)}>Pagar</button><button type="button" onClick={() => setSelectedSale({ ...sale, showInstallments: true })}>Parcelas</button><button type="button" onClick={() => window.print()}>Imprimir</button><a className="button-link" href={saleWhatsappUrl(sale)} target="_blank" rel="noreferrer">WhatsApp</a><button type="button" onClick={() => cancelSale(sale)}>Cancelar</button></div></td></tr>; })}</tbody></table></div>
+      </section>
+    );
+  }
+
+  function renderSaleDetailsModal() {
+    if (!selectedSale) return null;
+    const installments = saleInstallments(selectedSale.id);
+    return (
+      <StockModal title={`Venda ${selectedSale.code}`} onClose={() => setSelectedSale(null)}>
+        <div className="billing-history-modal sale-detail-modal">
+          <strong>{saleBuyerName(selectedSale)} · {money(Number(selectedSale.totalFinal || 0))}</strong>
+          <p className="stock-help">{selectedSale.saleType} · {selectedSale.saleModel} · {selectedSale.paymentMethod} · {saleStatus(selectedSale)}</p>
+          <div className="stock-table-wrap"><table><thead><tr><th>Item</th><th>Categoria</th><th>Qtd.</th><th>Unitário</th><th>Desconto</th><th>Subtotal</th></tr></thead><tbody>{(selectedSale.items || []).map((item, index) => <tr key={`${item.menuItemId}-${index}`}><td>{item.name}</td><td>{item.category}</td><td>{item.quantity}</td><td>{money(Number(item.unitPrice || 0))}</td><td>{money(Number(item.discount || 0))}</td><td>{money(Number(item.subtotal || 0))}</td></tr>)}</tbody></table></div>
+          {installments.length > 0 && <div className="stock-table-wrap"><table><thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th><th>Status</th></tr></thead><tbody>{installments.map((charge) => <tr key={charge.id}><td>{charge.installmentNumber}/{charge.totalInstallments}</td><td>{formatDate(charge.dueDate)}</td><td>{money(Number(charge.amount || 0))}</td><td>{billingChargeStatus(charge)}</td></tr>)}</tbody></table></div>}
+          {(selectedSale.history || []).map((item, index) => <article className="kanban-comment" key={`${item.date}-${index}`}><strong>{item.action}</strong><p>{item.note || "--"}</p><small>{item.date}</small></article>)}
+        </div>
+      </StockModal>
+    );
+  }
+
+  function renderSalesModule() {
+    const items = [
+      { id: "lista", label: "Vendas" }
+    ];
+
+    return (
+      <OperationalModuleLayout className="sales-workspace" items={items} page="lista" onNavigate={() => {}}>
+        {renderSalesList()}
+        {renderSaleModal()}
+        {renderSaleDetailsModal()}
+      </OperationalModuleLayout>
+    );
+  }
   function renderBillingModule() {
     const items = [
       { id: "dashboard", label: "Painel" },
@@ -5584,7 +6112,7 @@ export default function App() {
     return renderQrActionPage();
   }
 
-  if (["acompanhamento", "estoque", "etiquetas", "checklist", "faturamento", "acesso"].includes(page)) {
+  if (["acompanhamento", "estoque", "etiquetas", "checklist", "vendas", "faturamento", "acesso"].includes(page)) {
     const moduleInfo = MODULE_INFO[page];
 
     return (
@@ -5593,6 +6121,7 @@ export default function App() {
         {page === "checklist" && renderChecklistModule()}
         {page === "etiquetas" && renderEtiquetasModule()}
         {page === "acompanhamento" && renderClientDashboard()}
+        {page === "vendas" && renderSalesModule()}
         {page === "faturamento" && renderBillingModule()}
         {page === "acesso" && renderAccessModule()}
       </ModuleShell>
@@ -5658,17 +6187,6 @@ export default function App() {
     </AppShell>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 

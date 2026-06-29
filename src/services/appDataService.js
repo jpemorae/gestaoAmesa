@@ -60,6 +60,20 @@ export async function saveClientBillingData(clientId, payload) {
     body: JSON.stringify(payload)
   });
 }
+
+export async function loadClientSalesData(clientId) {
+  if (!canUseAppDataApi() || !clientId) return null;
+  return apiFetch(`/app-data/clients/${clientId}/sales`);
+}
+
+export async function saveClientSalesData(clientId, payload) {
+  if (!canUseAppDataApi() || !clientId) return null;
+  return apiFetch(`/app-data/clients/${clientId}/sales`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function saveAppUser(payload) {
   if (!canUseAppDataApi()) return null;
   const method = payload.id ? "PUT" : "POST";

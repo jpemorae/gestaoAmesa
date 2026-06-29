@@ -1,4 +1,4 @@
-export const MODULE_INFO = {
+﻿export const MODULE_INFO = {
   acompanhamento: {
     title: "Dashboard",
     icon: "📊",
@@ -19,14 +19,19 @@ export const MODULE_INFO = {
     icon: "✅",
     description: "Execução, evidências, recorrência e histórico operacional."
   },
+  vendas: {
+    title: "Vendas",
+    icon: "$",
+    description: "Registro de vendas, itens do menu e pagamentos."
+  },
   faturamento: {
     title: "Faturamento",
     icon: "$",
     description: "Clientes, cobrancas, pagamentos e inadimplencia."
-  },  acesso: {
+  },
+  acesso: {
     title: "Cadastros",
     icon: "⚙️",
     description: "Produtos, usuários, áreas, processos e atividades."
   }
 };
-

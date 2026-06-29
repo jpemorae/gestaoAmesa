@@ -6,10 +6,12 @@ import {
   deleteAppUser,
   getClientStockCatalog,
   getClientBillingData,
+  getClientSalesData,
   listAppData,
   updateAppClient,
   updateClientStockCatalog,
   updateClientBillingData,
+  updateClientSalesData,
   updateAppUser,
   upsertAppClient,
   upsertAppUser
@@ -30,6 +32,8 @@ router.get("/clients/:id/stock-catalog", getClientStockCatalog);
 router.put("/clients/:id/stock-catalog", updateClientStockCatalog);
 router.get("/clients/:id/billing", getClientBillingData);
 router.put("/clients/:id/billing", updateClientBillingData);
+router.get("/clients/:id/sales", getClientSalesData);
+router.put("/clients/:id/sales", updateClientSalesData);
 router.post("/users", upsertAppUser);
 router.put("/users/:id", updateAppUser);
 router.delete("/users/:id", deleteAppUser);
