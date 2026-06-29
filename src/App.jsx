@@ -547,6 +547,7 @@ export default function App() {
   const [showBillingAdvancedFilters, setShowBillingAdvancedFilters] = useState(false);
   const [selectedBillingCustomerId, setSelectedBillingCustomerId] = useState("");
   const [selectedBillingCharge, setSelectedBillingCharge] = useState(null);
+  const [selectedBillingGroup, setSelectedBillingGroup] = useState(null);
   const [openBillingActionId, setOpenBillingActionId] = useState("");
   const [openSaleActionId, setOpenSaleActionId] = useState("");
 
