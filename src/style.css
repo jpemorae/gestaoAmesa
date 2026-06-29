@@ -4158,3 +4158,45 @@ td {
     overflow-x: auto;
   }
 }
+
+
+.billing-detail-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+  border: 1px solid #eee0d0;
+  border-radius: 10px;
+  background: #fffdf8;
+  padding: 12px;
+}
+
+.billing-detail-summary div {
+  display: grid;
+  gap: 4px;
+}
+
+.billing-detail-summary span {
+  color: #6f6558;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.billing-detail-summary strong {
+  color: #001f3f;
+  font-size: 13px;
+}
+
+.billing-detail-table table {
+  min-width: 760px;
+}
+
+.billing-detail-history {
+  display: grid;
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .billing-detail-summary {
+    grid-template-columns: 1fr;
+  }
+}

@@ -4192,6 +4192,13 @@ export default function App() {
     return charge.parentChargeId || charge.saleId || `${charge.customerId}-${charge.chargeType}-${charge.paymentMethod}-${charge.totalAmount || charge.amount}-${charge.createdAt || charge.dueDate}`;
   }
 
+  function billingGroupProductDescription(groupCharges) {
+    const saleId = groupCharges.find((charge) => charge.saleId)?.saleId;
+    const sale = saleId ? salesRecords.find((record) => record.id === saleId) : null;
+    if (sale) return (sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", ") || sale.code || "Venda";
+    return groupCharges.find((charge) => charge.notes)?.notes || "Cobrança manual";
+  }
+
   function billingGroupCharges(charges) {
     const groups = new Map();
     charges.forEach((charge) => {
@@ -4224,7 +4231,9 @@ export default function App() {
         totalAmount,
         paidAmount,
         status,
-        paymentMethod: first.paymentMethod
+        paymentMethod: first.paymentMethod,
+        productDescription: billingGroupProductDescription(sorted),
+        originCode: first.saleId ? salesRecords.find((record) => record.id === first.saleId)?.code : first.parentChargeId ? "Cobrança" : "Cobrança"
       };
     });
   }
@@ -4434,7 +4443,7 @@ export default function App() {
                           <button type="button" onClick={() => { setOpenBillingActionId(""); registerBillingPartialPayment(group.primaryCharge); }}>Pagamento parcial</button>
                           <button type="button" onClick={() => { setOpenBillingActionId(""); editBillingDueDate(group.primaryCharge); }}>Editar vencimento</button>
                           <button type="button" onClick={() => { setOpenBillingActionId(""); addBillingObservation(group.primaryCharge); }}>Adicionar observação</button>
-                          <button type="button" onClick={() => { setOpenBillingActionId(""); setSelectedBillingCharge(group.primaryCharge); }}>Histórico</button>
+                          <button type="button" onClick={() => { setOpenBillingActionId(""); setSelectedBillingGroup(group); }}>Detalhamento</button>
                           <button type="button" className="danger-action" onClick={() => cancelBillingGroup(group)}>Cancelar cobrança</button>
                         </div>
                       )}
@@ -4449,6 +4458,49 @@ export default function App() {
     );
   }
   function renderBillingHistoryModal() {
+    if (selectedBillingGroup) {
+      return (
+        <StockModal title="Detalhamento da cobrança" onClose={() => setSelectedBillingGroup(null)}>
+          <div className="billing-history-modal billing-detail-modal">
+            <div className="billing-detail-summary">
+              <div><span>Cliente</span><strong>{selectedBillingGroup.customer?.fullName || "--"}</strong></div>
+              <div><span>CPF</span><strong>{selectedBillingGroup.customer?.cpf || "--"}</strong></div>
+              <div><span>Produto/origem</span><strong>{selectedBillingGroup.productDescription}</strong></div>
+              <div><span>Total</span><strong>{money(selectedBillingGroup.totalAmount)}</strong></div>
+              <div><span>Pago</span><strong>{money(selectedBillingGroup.paidAmount)}</strong></div>
+              <div><span>Status</span><strong>{selectedBillingGroup.status}</strong></div>
+            </div>
+            <div className="stock-table-wrap billing-detail-table">
+              <table>
+                <thead><tr><th>Parcela</th><th>Produto</th><th>Vencimento</th><th>Valor</th><th>Pago</th><th>Status</th><th>Pagamento</th></tr></thead>
+                <tbody>
+                  {selectedBillingGroup.charges.map((charge) => (
+                    <tr key={charge.id}>
+                      <td>{charge.installmentNumber || 1}/{charge.totalInstallments || selectedBillingGroup.charges.length}</td>
+                      <td>{selectedBillingGroup.productDescription}</td>
+                      <td>{formatDate(charge.dueDate)}</td>
+                      <td>{money(Number(charge.amount || 0))}</td>
+                      <td>{money(billingChargePaidAmount(charge))}</td>
+                      <td><span className={"billing-status-pill " + billingGroupStatusClass(billingChargeStatus(charge))}>{billingChargeStatus(charge)}</span></td>
+                      <td>{charge.paymentMethod}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {selectedBillingGroup.charges.some((charge) => (charge.history || []).length > 0) && (
+              <div className="billing-detail-history">
+                <strong>Histórico</strong>
+                {selectedBillingGroup.charges.flatMap((charge) => (charge.history || []).map((item, index) => ({ ...item, charge, index }))).map((item) => (
+                  <article className="kanban-comment" key={item.charge.id + item.date + item.index}><strong>{item.action}</strong><p>{item.note || "--"}</p><small>{item.date}</small></article>
+                ))}
+              </div>
+            )}
+          </div>
+        </StockModal>
+      );
+    }
+
     if (!selectedBillingCharge) return null;
     const customer = billingCustomerById(selectedBillingCharge.customerId);
     return (
