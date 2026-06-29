@@ -4200,3 +4200,17 @@ td {
     grid-template-columns: 1fr;
   }
 }
+
+
+.sale-unit-price {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #eee0d0;
+  border-radius: 8px;
+  background: #fffdf8;
+  color: #073457;
+  font-weight: 900;
+  padding: 8px 10px;
+}

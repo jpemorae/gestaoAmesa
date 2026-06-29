@@ -561,6 +561,7 @@ export default function App() {
     saleModel: "À vista",
     paymentMethod: "PIX",
     paymentDate: today(),
+    firstPaymentDate: today(),
     paymentStatus: "Pago",
     installments: "2",
     firstDueDate: today(),
@@ -3651,10 +3652,23 @@ export default function App() {
     return sale.buyerName || "Venda avulsa";
   }
 
+  function saleMenuPrice(menuItem, saleModel = saleForm.saleModel) {
+    if (!menuItem) return 0;
+    if (saleModel === "Parcelada") {
+      return Number(menuItem.interestValue || menuItem.saleValue || menuItem.grossValue || menuItem.netValue || 0);
+    }
+    return Number(menuItem.netValue || menuItem.saleValue || 0);
+  }
+
+  function saleItemUnitPrice(item, saleModel = saleForm.saleModel) {
+    const menuItem = menuItemById(item.menuItemId);
+    return menuItem ? saleMenuPrice(menuItem, saleModel) : Number(item.unitPrice || 0);
+  }
+
   function saleTotals(items = saleItems) {
     return items.reduce((totals, item) => {
       const quantity = Number(item.quantity || 0);
-      const unitPrice = Number(item.unitPrice || 0);
+      const unitPrice = saleItemUnitPrice(item);
       const discount = Number(item.discount || 0);
       const gross = quantity * unitPrice;
       return {
@@ -3681,7 +3695,7 @@ export default function App() {
   }
 
   function resetSaleForm() {
-    setSaleForm({ ...emptySaleForm, paymentDate: today(), firstDueDate: today() });
+    setSaleForm({ ...emptySaleForm, paymentDate: today(), firstPaymentDate: today(), firstDueDate: today() });
     setSaleItems([{ menuItemId: "", quantity: 1, unitPrice: 0, discount: 0 }]);
   }
 
@@ -3706,7 +3720,7 @@ export default function App() {
       const next = { ...item, [field]: value };
       if (field === "menuItemId") {
         const menuItem = menuItemById(value);
-        next.unitPrice = Number(menuItem?.saleValue || 0);
+        next.unitPrice = saleMenuPrice(menuItem);
       }
       if (["quantity", "unitPrice", "discount"].includes(field)) next[field] = Number(value || 0);
       return next;
@@ -3740,6 +3754,7 @@ export default function App() {
         status: "Pago",
         paidAmount: totals.final,
         paidAt: sale.paymentDate || today(),
+        firstPaymentDate: sale.firstPaymentDate || sale.paymentDate || today(),
         notes: `Venda ${sale.code}`,
         saleId: sale.id,
         history: [{ action: "Pagamento registrado pela venda", note: sale.code, date: new Date().toLocaleString("pt-BR") }],
@@ -3763,6 +3778,7 @@ export default function App() {
       status: "A vencer",
       paidAmount: 0,
       paidAt: "",
+      firstPaymentDate: addMonthsToDate(sale.firstPaymentDate || sale.firstDueDate || today(), index, sale.fixedDueDay),
       notes: `Venda ${sale.code}`,
       saleId: sale.id,
       history: [{ action: "Cobrança gerada pela venda", note: sale.code, date: new Date().toLocaleString("pt-BR") }],
@@ -3808,6 +3824,7 @@ export default function App() {
         saleModel: sale.saleModel || "À vista",
         paymentMethod: sale.paymentMethod || "PIX",
         paymentDate: sale.paymentDate || today(),
+        firstPaymentDate: sale.firstPaymentDate || sale.paymentDate || today(),
         paymentStatus: sale.paymentStatus || "Pendente",
         installments: String(sale.installments || 2),
         firstDueDate: sale.firstDueDate || today(),
@@ -3833,15 +3850,16 @@ export default function App() {
       .filter((item) => item.menuItemId && Number(item.quantity || 0) > 0)
       .map((item) => {
         const menuItem = menuItemById(item.menuItemId);
+        const unitPrice = saleItemUnitPrice(item, saleForm.saleType === "Avulsa" ? "À vista" : saleForm.saleModel);
         return {
           menuItemId: item.menuItemId,
           name: menuItem?.dishName || "Item do menu",
           category: menuItem?.type || "--",
           description: (menuItem?.portions || []).map((portion) => portion.stockItemName).filter(Boolean).join(", "),
           quantity: Number(item.quantity || 0),
-          unitPrice: Number(item.unitPrice || 0),
+          unitPrice,
           discount: Number(item.discount || 0),
-          subtotal: Math.max(Number(item.quantity || 0) * Number(item.unitPrice || 0) - Number(item.discount || 0), 0)
+          subtotal: Math.max(Number(item.quantity || 0) * unitPrice - Number(item.discount || 0), 0)
         };
       });
 
@@ -3874,6 +3892,7 @@ export default function App() {
       saleModel: saleForm.saleType === "Avulsa" ? "À vista" : saleForm.saleModel,
       paymentMethod: saleForm.paymentMethod,
       paymentDate: paidNow ? (saleForm.paymentDate || today()) : "",
+      firstPaymentDate: saleForm.firstPaymentDate || saleForm.paymentDate || today(),
       paymentStatus: paidNow ? "Pago" : "Pendente",
       installments: saleForm.saleModel === "Parcelada" ? Number(saleForm.installments || 1) : 1,
       firstDueDate: saleForm.firstDueDate || today(),
@@ -4557,12 +4576,12 @@ export default function App() {
         <div className="stock-title-row compact"><div><strong>Itens vendidos</strong><p className="stock-help">Use apenas itens ativos do cadastro de Menu.</p></div><button className="secondary" type="button" onClick={addSaleItem}>Adicionar item</button></div>
         {saleItems.map((item, index) => {
           const selected = menuItemById(item.menuItemId);
-          const subtotal = Math.max(Number(item.quantity || 0) * Number(item.unitPrice || 0) - Number(item.discount || 0), 0);
+          const subtotal = Math.max(Number(item.quantity || 0) * saleItemUnitPrice(item) - Number(item.discount || 0), 0);
           return (
             <div className="sale-item-row" key={index}>
               <select value={item.menuItemId} onChange={(event) => updateSaleItem(index, "menuItemId", event.target.value)}><option value="">Item do menu</option>{activeItems.map((menuItem) => <option key={menuItem.id} value={menuItem.id}>{menuItem.dishName} - {menuItem.type} - {money(Number(menuItem.saleValue || 0))}</option>)}</select>
               <input type="number" min="1" step="1" value={item.quantity} onChange={(event) => updateSaleItem(index, "quantity", event.target.value)} placeholder="Qtd." />
-              <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateSaleItem(index, "unitPrice", event.target.value)} placeholder="Valor unit." />
+              <span className="sale-unit-price">{money(saleItemUnitPrice(item))}</span>
               <input type="number" min="0" step="0.01" value={item.discount} onChange={(event) => updateSaleItem(index, "discount", event.target.value)} placeholder="Desconto" />
               <span>{money(subtotal)}</span>
               <button className="danger" type="button" onClick={() => removeSaleItem(index)}>Remover</button>
@@ -4593,6 +4612,7 @@ export default function App() {
             {saleForm.saleModel === "À vista" && saleForm.paymentStatus === "Pago" && <label>Data do pagamento<input type="date" value={saleForm.paymentDate} onChange={(event) => updateSaleForm("paymentDate", event.target.value)} /></label>}
             {saleForm.saleModel === "À vista" && saleForm.paymentStatus === "Pendente" && <label>Vencimento<input type="date" value={saleForm.firstDueDate} onChange={(event) => updateSaleForm("firstDueDate", event.target.value)} /></label>}
             {saleForm.saleModel === "Parcelada" && <label>Quantidade de parcelas<input type="number" min="2" value={saleForm.installments} onChange={(event) => updateSaleForm("installments", event.target.value)} /></label>}
+            {saleForm.saleModel === "Parcelada" && <label>Primeiro pagamento<input type="date" value={saleForm.firstPaymentDate} onChange={(event) => updateSaleForm("firstPaymentDate", event.target.value)} /></label>}
             {saleForm.saleModel === "Parcelada" && <label>Primeiro vencimento<input type="date" value={saleForm.firstDueDate} onChange={(event) => updateSaleForm("firstDueDate", event.target.value)} /></label>}
             {saleForm.saleModel === "Parcelada" && <label>Dia fixo de vencimento<input type="number" min="1" max="31" value={saleForm.fixedDueDay} onChange={(event) => updateSaleForm("fixedDueDay", event.target.value)} placeholder="Opcional" /></label>}
             <label className="stock-form-grid-full">Observação<input value={saleForm.notes} onChange={(event) => updateSaleForm("notes", event.target.value)} placeholder="Observação da venda" /></label>
